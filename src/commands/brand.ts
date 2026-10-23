@@ -69,10 +69,15 @@ async function use(ctx: Context, _opts: unknown, ref: string): Promise<void> {
 async function show(ctx: Context, _opts: unknown, ref?: string): Promise<void> {
   const client = await ctx.api();
   const { brand, source, serverBrandId } = await activeBrand(ctx, client, ref);
-  const [competitors, sets] = await Promise.all([
-    ctx.call(client.GET("/api/v1/brands/{brand_id}/competitors", { params: { path: { brand_id: brand.id } } })),
-    ctx.call(client.GET("/api/v1/monitoring/query-sets", { params: { query: { limit: 100 } } })),
-  ]);
+  const competitors = await ctx.call(
+    client.GET("/api/v1/brands/{brand_id}/competitors", { params: { path: { brand_id: brand.id } } }),
+  );
+  const sets = [];
+  for (let skip = 0; ; skip += 100) {
+    const page = await ctx.call(client.GET("/api/v1/monitoring/query-sets", { params: { query: { skip, limit: 100 } } }));
+    sets.push(...page);
+    if (page.length < 100) break;
+  }
   const brandSets = sets.filter((s) => s.brand_id === brand.id);
   const data = {
     ...brand,

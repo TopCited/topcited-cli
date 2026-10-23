@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { chmod, rename, rm } from "node:fs/promises";
 import type { Command } from "commander";
 import type { Context } from "../context";
-import { CliError, Exit } from "../errors";
+import { CliError, Exit, networkError } from "../errors";
 import { assetName, compareVersions, githubHeaders, latestRelease, REPO } from "../release";
 import { VERSION } from "../version";
 import type { Action } from "./types";
@@ -64,7 +64,12 @@ async function upgrade(ctx: Context, opts: { check?: boolean }): Promise<void> {
 
 /** Release assets via the API URL, so it also works with a token on a private repo. */
 async function download(ctx: Context, url: string): Promise<Uint8Array> {
-  const res = await ctx.rt.fetch(url, { headers: githubHeaders(ctx.rt.env, "application/octet-stream") });
+  let res: Response;
+  try {
+    res = await ctx.rt.fetch(url, { headers: githubHeaders(ctx.rt.env, "application/octet-stream") });
+  } catch (e) {
+    throw networkError(new URL(url).origin, e);
+  }
   if (!res.ok) throw new CliError({ exit: Exit.ERROR, code: "download_failed", status: res.status, message: `Download failed: ${url}` });
   return new Uint8Array(await res.arrayBuffer());
 }

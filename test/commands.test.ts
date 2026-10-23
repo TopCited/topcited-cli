@@ -67,6 +67,31 @@ describe("topcited api", () => {
     expect(rt.outJson()).toEqual([1, 2, 3]);
   });
 
+  test("--paginate fails loudly at the page cap instead of truncating", async () => {
+    api = mockApi({ "GET /api/v1/tasks": [1, 2] });
+    const rt = authed();
+    expect(await cli(rt, "--base-url", api.url, "api", "/tasks", "-f", "limit=2", "--paginate", "--max-pages", "3")).toBe(1);
+    expect(rt.errJson().at(-1)).toMatchObject({ code: "too_many_pages" });
+    expect(api.calls("GET", "/api/v1/tasks")).toHaveLength(3);
+    expect(await cli(authed(), "--base-url", api.url, "api", "/tasks", "-f", "limit=x", "--paginate")).toBe(2);
+  });
+
+  test("keeps a path prefix in the base URL", async () => {
+    api = mockApi({ "GET /proxy/api/v1/users/me": ME });
+    const rt = authed();
+    expect(await cli(rt, "--base-url", `${api.url}/proxy`, "api", "/users/me")).toBe(0);
+    expect(rt.outJson().email).toBe(ME.email);
+  });
+
+  test("a non-JSON error body goes to stderr, keeping stdout clean", async () => {
+    api = mockApi({ "GET /api/v1/users/me": () => new Response("<html>502 Bad Gateway</html>", { status: 502, headers: { "content-type": "text/html" } }) });
+    const rt = authed();
+    expect(await cli(rt, "--base-url", api.url, "api", "/users/me")).toBe(1);
+    expect(rt.out()).toBe("");
+    expect(rt.err()).toContain("502 Bad Gateway");
+    expect(rt.errJson().at(-1).status).toBe(502);
+  });
+
   test("needs a key", async () => {
     const rt = testRuntime();
     expect(await cli(rt, "api", "/users/me")).toBe(3);
@@ -237,6 +262,13 @@ describe("update notice", () => {
     expect(await cli(again, "auth", "logout")).toBe(0);
     expect(again.err()).toBe("");
     expect(api.calls("GET", "/releases/latest")).toHaveLength(1);
+  });
+
+  test("never with --json", async () => {
+    api = releaseApi("99.0.0", new Uint8Array([1]));
+    const rt = testRuntime({ tty: true, env: { TOPCITED_RELEASES_API: `${api.url}/releases/latest`, TOPCITED_NO_UPDATE_NOTIFIER: "" } });
+    expect(await cli(rt, "--json", "auth", "logout")).toBe(0);
+    expect(api.requests).toHaveLength(0);
   });
 
   test("never without a TTY", async () => {

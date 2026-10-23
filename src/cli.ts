@@ -64,7 +64,8 @@ function emitError(rt: Runtime, err: CliError, json: boolean): void {
 export async function run(argv: string[], rt: Runtime = defaultRuntime()): Promise<ExitCode> {
   const jsonHint = argv.includes("--json") || !rt.stdoutIsTTY;
   const program = buildProgram(rt, jsonHint);
-  const notice = argv[0] === "upgrade" ? Promise.resolve(undefined) : checkForUpdate(rt).catch(() => undefined);
+  // No notice for `upgrade` itself, or in JSON mode (stderr stays JSON Lines).
+  const notice = argv[0] === "upgrade" || jsonHint ? Promise.resolve(undefined) : checkForUpdate(rt).catch(() => undefined);
   try {
     await program.parseAsync(argv, { from: "user" });
     const update = await notice;
