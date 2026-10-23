@@ -41,6 +41,21 @@ API host. `TOPCITED_API_KEY` overrides the stored key and `TOPCITED_BASE_URL`
 (or `--base-url`) overrides the API host. Keys expire after 90 days; the CLI
 warns when fewer than 14 remain.
 
+## Commands
+
+```
+topcited auth login | logout | status | token [--show]
+topcited brand list | use <id|name> | show [brand]
+topcited usage                                  # plan, T-coins, quotas, monitoring forecast
+topcited api <path> [-X M] [-d json|@file] [-f k=v] [-F k=v] [--paginate]
+topcited doctor                                 # config, auth, connectivity, version skew
+topcited upgrade [--check]
+```
+
+`topcited <command> --help` shows a runnable example for each. `--brand`
+(or `TOPCITED_BRAND`) picks a brand for one command; `brand use` stores one per
+API host.
+
 ## For agents
 
 - stdout is JSON when it isn't a terminal, or with `--json`.

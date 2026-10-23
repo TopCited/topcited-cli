@@ -20,7 +20,7 @@ export function json(body: unknown, status = 200): Response {
 }
 
 /** A local HTTP server standing in for the TopCited API; routes are tried in order. */
-export function mockApi(routes: Record<string, Route | unknown>) {
+export function mockApi(routes: Record<string, Route | Record<string, unknown> | unknown[]>) {
   const requests: Recorded[] = [];
   const server = Bun.serve({
     port: 0,
@@ -68,7 +68,8 @@ export function testRuntime(opts: { env?: Record<string, string>; tty?: boolean;
   const opened: string[] = [];
   const answers = [...(opts.answers ?? [])];
   const rt: TestRuntime = {
-    env: { ...opts.env },
+    // Tests opt in to the update check explicitly (it would otherwise call GitHub).
+    env: { TOPCITED_NO_UPDATE_NOTIFIER: "1", ...opts.env },
     stdout: (s) => void (out += s),
     stderr: (s) => void (err += s),
     stdoutIsTTY: Boolean(opts.tty),
@@ -87,6 +88,8 @@ export function testRuntime(opts: { env?: Record<string, string>; tty?: boolean;
     },
     readStdin: async () => opts.stdin ?? "",
     prompt: async () => answers.shift() ?? "",
+    execPath: join(dir, "bin", "topcited"),
+    install: "binary",
     out: () => out,
     err: () => err,
     outJson: () => JSON.parse(out),

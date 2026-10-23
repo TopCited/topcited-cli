@@ -22,6 +22,17 @@ export interface Runtime {
   readStdin: () => Promise<string>;
   /** Only called when stdin and stderr are TTYs. */
   prompt: (question: string) => Promise<string>;
+  /** The running executable, and how it was installed (decides what `upgrade` does). */
+  execPath: string;
+  install: InstallKind;
+}
+
+export type InstallKind = "binary" | "npm" | "source";
+
+function installKind(): InstallKind {
+  if (process.execPath.replaceAll("\\", "/").includes("/node_modules/@topcited/cli-")) return "npm";
+  // Compiled binaries run their entry point from Bun's embedded filesystem.
+  return Bun.main.includes("$bunfs") || Bun.main.includes("~BUN") ? "binary" : "source";
 }
 
 function canOpenBrowser(env: Runtime["env"]): boolean {
@@ -61,6 +72,8 @@ export function defaultRuntime(): Runtime {
       }
     },
     readStdin: () => new Response(Bun.stdin.stream()).text(),
+    execPath: process.execPath,
+    install: installKind(),
     async prompt(question) {
       const rl = createInterface({ input: process.stdin, output: process.stderr });
       try {

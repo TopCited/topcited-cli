@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { chmod, cp, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generate } from "../scripts/gen-client";
+import { generate, generateOperations } from "../scripts/gen-client";
 import { TARGETS, npmPackageName } from "../scripts/targets";
 import { VERSION, userAgent } from "../src/version";
 
@@ -20,6 +20,7 @@ describe("generated client", () => {
   test("is in sync with openapi.public.json (run `bun run gen:client`)", async () => {
     const committed = await Bun.file("src/generated/schema.d.ts").text();
     expect(committed).toBe(await generate());
+    expect(await Bun.file("src/generated/operations.ts").text()).toBe(await generateOperations());
   });
 });
 

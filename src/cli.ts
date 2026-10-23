@@ -1,22 +1,31 @@
 import { Command, CommanderError } from "commander";
+import { registerApi } from "./commands/api";
 import { registerAuth } from "./commands/auth";
+import { registerBrand } from "./commands/brand";
+import { registerDoctor } from "./commands/doctor";
+import { registerUpgrade } from "./commands/upgrade";
+import { registerUsage } from "./commands/usage";
 import type { Action, Register } from "./commands/types";
 import { Context, type GlobalOptions } from "./context";
 import { CliError, Exit, type ExitCode } from "./errors";
 import { defaultRuntime, type Runtime } from "./runtime";
+import { checkForUpdate } from "./update-notice";
 import { VERSION } from "./version";
 
-const REGISTER: Register[] = [registerAuth];
+const REGISTER: Register[] = [registerAuth, registerBrand, registerUsage, registerApi, registerDoctor, registerUpgrade];
 
 const HELP_FOOTER = `
 Common flows:
   $ topcited auth login                    sign in (prints a URL and code to approve)
   $ topcited brand list                    your brands
+  $ topcited usage                         plan and T-coin balance
+  $ topcited api /monitoring/query-sets    any public endpoint, raw
+  $ topcited doctor                        diagnose config, auth, connectivity
 
 Agents: output is JSON when stdout is not a terminal (or with --json); errors
 are a JSON object on stderr; exit codes: 0 ok, 1 error, 2 usage, 3 auth,
 4 payment/quota, 5 not found, 6 conflict, 7 --wait timed out.
-Env: TOPCITED_API_KEY, TOPCITED_BASE_URL.`;
+Env: TOPCITED_API_KEY, TOPCITED_BASE_URL, TOPCITED_BRAND.`;
 
 export function buildProgram(rt: Runtime, jsonHint: boolean): Command {
   const program = new Command("topcited")
@@ -24,6 +33,7 @@ export function buildProgram(rt: Runtime, jsonHint: boolean): Command {
     .version(VERSION, "-v, --version")
     .option("--json", "print JSON (default when stdout is not a terminal)")
     .option("--base-url <url>", "API base URL (default: $TOPCITED_BASE_URL or https://api.topcited.ai)")
+    .option("--brand <brand>", "brand id, id prefix or name (default: $TOPCITED_BRAND or `brand use`)")
     .addHelpText("after", HELP_FOOTER)
     .showHelpAfterError(!jsonHint)
     .exitOverride()
@@ -54,10 +64,17 @@ function emitError(rt: Runtime, err: CliError, json: boolean): void {
 export async function run(argv: string[], rt: Runtime = defaultRuntime()): Promise<ExitCode> {
   const jsonHint = argv.includes("--json") || !rt.stdoutIsTTY;
   const program = buildProgram(rt, jsonHint);
+  const notice = argv[0] === "upgrade" ? Promise.resolve(undefined) : checkForUpdate(rt).catch(() => undefined);
   try {
     await program.parseAsync(argv, { from: "user" });
+    const update = await notice;
+    if (update) {
+      rt.stderr(update.text);
+      await update.shown();
+    }
     return Exit.OK;
   } catch (e) {
+    await notice; // let the check finish its state write; no notice on failure
     if (e instanceof CommanderError) {
       if (e.code === "commander.helpDisplayed" || e.code === "commander.version" || e.exitCode === 0) return Exit.OK;
       // Bare `topcited` / `topcited auth` prints help: fine for a person, a usage

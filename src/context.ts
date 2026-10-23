@@ -10,6 +10,7 @@ const DAY_MS = 86_400_000;
 export interface GlobalOptions {
   json?: boolean;
   baseUrl?: string;
+  brand?: string;
 }
 
 export interface ResolvedCredential {
@@ -42,6 +43,8 @@ export class Context {
     readonly baseUrl: string,
     readonly baseUrlSource: "flag" | "env" | "config" | "default",
     json: boolean,
+    /** `--brand`, else TOPCITED_BRAND; see brand.ts for the rest of the chain. */
+    readonly brandRef: string | undefined,
   ) {
     // JSON when asked, or when a program (not a person) reads stdout.
     this.json = json || !rt.stdoutIsTTY;
@@ -61,7 +64,7 @@ export class Context {
     } catch {
       throw usageError(`Invalid base URL: ${baseUrl}`, "Use a full URL, e.g. https://api.topcited.ai");
     }
-    return new Context(rt, normalizeBaseUrl(baseUrl), source, Boolean(opts.json));
+    return new Context(rt, normalizeBaseUrl(baseUrl), source, Boolean(opts.json), opts.brand ?? rt.env.TOPCITED_BRAND);
   }
 
   get uiUrl(): string {
