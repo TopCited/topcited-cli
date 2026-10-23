@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { activeBrand } from "../brand";
 import type { Context } from "../context";
-import { usageError } from "../errors";
+import { networkError, usageError } from "../errors";
 import { fields, table, when } from "../format";
 import type { components } from "../generated/schema";
 import { reportJob } from "../jobs";
@@ -116,10 +116,15 @@ async function download(ctx: Context, opts: { format: string; output?: string },
   if (opts.format !== "html" && opts.format !== "pdf") throw usageError(`--format must be html or pdf.`);
   const cred = await ctx.credential();
   await ctx.api();
-  // Binary body: go around the JSON client.
-  const res = await ctx.rt.fetch(`${ctx.baseUrl}/api/v1/reports/${encodeURIComponent(id)}/download/${opts.format}`, {
-    headers: { Authorization: `Bearer ${cred!.apiKey}`, "User-Agent": userAgent() },
-  });
+  // Binary body, so not ctx.request; and no request timeout (large PDFs).
+  let res: Response;
+  try {
+    res = await ctx.rt.fetch(`${ctx.baseUrl}/api/v1/reports/${encodeURIComponent(id)}/download/${opts.format}`, {
+      headers: { Authorization: `Bearer ${cred!.apiKey}`, "User-Agent": userAgent() },
+    });
+  } catch (e) {
+    throw networkError(ctx.baseUrl, e);
+  }
   if (!res.ok) {
     const text = await res.text();
     let body: unknown = text;

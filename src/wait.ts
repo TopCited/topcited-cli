@@ -58,12 +58,41 @@ export function parseTimeout(raw: string | undefined): number {
   return n;
 }
 
+/** Errors worth retrying while a job runs server-side: 5xx, 429, network. */
+function transient(e: unknown): e is CliError {
+  return e instanceof CliError && (e.code === "network_error" || e.status === 429 || (e.status ?? 0) >= 500);
+}
+
+/** Any error out of the loop names the job, so an agent can resume it. */
+function withJob(e: unknown, job: Job): unknown {
+  if (!(e instanceof CliError) || e.extra?.job) return e;
+  return new CliError({ exit: e.exit, code: e.code, message: e.message, hint: e.hint, status: e.status, extra: { ...e.extra, job: job.ref, job_id: job.id } });
+}
+
 export async function waitFor(ctx: Context, job: Job, timeoutS: number): Promise<JobState> {
+  try {
+    return await loop(ctx, job, timeoutS);
+  } catch (e) {
+    throw withJob(e, job);
+  }
+}
+
+async function loop(ctx: Context, job: Job, timeoutS: number): Promise<JobState> {
   const deadline = ctx.rt.now().getTime() + timeoutS * 1000;
   let delay = FIRST_DELAY_MS;
   let lastLine = "";
   for (;;) {
-    const state = await job.poll();
+    let state: JobState;
+    try {
+      state = await job.poll();
+    } catch (e) {
+      // A deploy restart or a network blip mid-wait: the job is still running.
+      if (!transient(e) || ctx.rt.now().getTime() >= deadline) throw e;
+      ctx.warn(`poll_retry_${e.code}`, `Polling ${job.kind} ${job.id} failed (${e.message}); retrying.`);
+      await ctx.rt.sleep(Math.min(delay, Math.max(0, deadline - ctx.rt.now().getTime())));
+      delay = Math.min(Math.round(delay * 1.5), MAX_DELAY_MS);
+      continue;
+    }
     const line = state.progress ? `${state.status}: ${state.progress}` : state.status;
     if (line !== lastLine) ctx.info(`[${job.kind} ${job.id.slice(0, 8)}] ${line}`);
     lastLine = line;

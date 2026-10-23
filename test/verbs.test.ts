@@ -36,8 +36,9 @@ const DETAIL = {
   ],
 };
 
-function run(status: string, batch = BATCH) {
-  return { id: crypto.randomUUID(), run_batch_id: batch, status, provider: "chatgpt", query_text: "x", query_set_id: SET_ID };
+const T0 = "2026-10-23T12:00:00Z";
+function run(status: string, batch = BATCH, createdAt = T0) {
+  return { id: crypto.randomUUID(), run_batch_id: batch, status, provider: "chatgpt", query_text: "x", query_set_id: SET_ID, created_at: createdAt };
 }
 
 /** Monitoring API whose batch advances one step per poll of /monitoring/runs. */
@@ -53,7 +54,7 @@ function monitoringApi(steps: string[][], extra: Record<string, unknown> = {}) {
     [`POST /api/v1/monitoring/query-sets/${SET_ID}/run`]: () => json({ batch_id: BATCH, runs_created: steps[0]!.length }, 202),
     "GET /api/v1/monitoring/runs": () => {
       const statuses = steps[Math.min(poll++, steps.length - 1)]!;
-      return json({ items: [...statuses.map((s) => run(s)), run("success", "older-batch")], total: statuses.length + 1, skip: 0, limit: 100 });
+      return json({ items: [...statuses.map((s) => run(s)), run("success", "older-batch", "2026-10-22T06:00:00Z")], total: statuses.length + 1, skip: 0, limit: 100 });
     },
     ...extra,
   } as Parameters<typeof mockApi>[0]);
@@ -81,7 +82,7 @@ describe("monitor run", () => {
     ]);
     const rt = authed();
     expect(await cli(rt, "--base-url", api.url, "monitor", "run", SET_ID, "--wait")).toBe(0);
-    expect(rt.outJson()).toMatchObject({ batch_id: BATCH, status: "partial", total: 3, counts: { success: 2, failed: 1 }, job: `monitor:${SET_ID}:${BATCH}` });
+    expect(rt.outJson()).toMatchObject({ batch_id: BATCH, status: "partial", total: 3, counts: { success: 2, failed: 1 }, job: `monitor:${SET_ID}:${BATCH}:3` });
     expect(rt.sleeps).toEqual([2000, 3000]); // backoff ×1.5
   });
 
@@ -89,7 +90,7 @@ describe("monitor run", () => {
     api = monitoringApi([["pending"]]);
     const rt = authed();
     expect(await cli(rt, "--base-url", api.url, "monitor", "run", "core")).toBe(0);
-    expect(rt.outJson()).toEqual({ query_set_id: SET_ID, batch_id: BATCH, runs_created: 1, job: `monitor:${SET_ID}:${BATCH}` });
+    expect(rt.outJson()).toEqual({ query_set_id: SET_ID, batch_id: BATCH, runs_created: 1, job: `monitor:${SET_ID}:${BATCH}:1` });
   });
 
   test("--timeout passing first → exit 7 with the job id; `wait <job>` resumes", async () => {
@@ -97,12 +98,79 @@ describe("monitor run", () => {
     const rt = authed();
     expect(await cli(rt, "--base-url", api.url, "monitor", "run", "Core", "--wait", "--timeout", "3")).toBe(7);
     const env = rt.errJson().at(-1);
-    expect(env).toMatchObject({ code: "wait_timeout", job: `monitor:${SET_ID}:${BATCH}`, job_id: BATCH });
-    expect(env.hint).toContain(`topcited wait monitor:${SET_ID}:${BATCH}`);
+    expect(env).toMatchObject({ code: "wait_timeout", job: `monitor:${SET_ID}:${BATCH}:1`, job_id: BATCH });
+    expect(env.hint).toContain(`topcited wait monitor:${SET_ID}:${BATCH}:1`);
 
     const rt2 = authed();
     expect(await cli(rt2, "--base-url", api.url, "wait", env.job)).toBe(0);
     expect(rt2.outJson()).toMatchObject({ status: "success" });
+  });
+
+  test("a newer batch listed first doesn't cut the scan short (resume without a count)", async () => {
+    // 30 runs of a newer batch, then our 150, then older history; 100 per page.
+    const rows = [
+      ...Array.from({ length: 30 }, () => run("running", "newer", "2026-10-23T13:00:00Z")),
+      ...Array.from({ length: 150 }, (_, i) => run(i < 149 ? "success" : "pending")),
+      ...Array.from({ length: 40 }, () => run("success", "older", "2026-10-22T06:00:00Z")),
+    ];
+    let finished = false;
+    api = mockApi({
+      "GET /api/v1/users/me": ME,
+      "GET /api/v1/monitoring/runs": (r: Recorded) => {
+        const skip = Number(r.search.get("skip"));
+        const items = rows.slice(skip, skip + 100).map((x) => (finished && x.run_batch_id === BATCH ? { ...x, status: "success" } : x));
+        return json({ items, total: rows.length, skip, limit: 100 });
+      },
+    });
+    const rt = authed();
+    rt.sleep = async (ms) => {
+      rt.sleeps.push(ms);
+      finished = true;
+    };
+    expect(await cli(rt, "--base-url", api.url, "wait", `monitor:${SET_ID}:${BATCH}`)).toBe(0);
+    expect(rt.outJson()).toMatchObject({ status: "success", result: { total: 150 } });
+    expect(rt.sleeps).toHaveLength(1); // first poll saw 1 pending of 150; not "done" early
+  });
+
+  test("an unknown batch fails fast with exit 5 instead of waiting out the timeout", async () => {
+    api = monitoringApi([["success"]]);
+    const rt = authed();
+    expect(await cli(rt, "--base-url", api.url, "wait", `monitor:${SET_ID}:not-a-batch`)).toBe(5);
+    expect(rt.errJson().at(-1)).toMatchObject({ code: "batch_not_found", job: `monitor:${SET_ID}:not-a-batch` });
+    expect(rt.sleeps).toEqual([]);
+  });
+
+  test("transient 5xx / network errors mid-wait are retried", async () => {
+    let n = 0;
+    api = monitoringApi([["running"], ["success"]], {
+      "GET /api/v1/monitoring/runs": () =>
+        n++ === 0
+          ? json({ error: { code: "BAD_GATEWAY", message: "upstream restarting" } }, 502)
+          : json({ items: [run(n > 2 ? "success" : "running")], total: 1, skip: 0, limit: 100 }),
+    });
+    const rt = authed();
+    expect(await cli(rt, "--base-url", api.url, "monitor", "run", "Core", "--wait")).toBe(0);
+    expect(rt.errJson().some((l) => l.warning === "poll_retry_bad_gateway")).toBe(true);
+  });
+
+  test("a non-transient error mid-wait still names the job", async () => {
+    api = monitoringApi([["running"]], {
+      "GET /api/v1/monitoring/runs": () => json({ error: { code: "UNAUTHORIZED", message: "revoked" } }, 401),
+    });
+    const rt = authed();
+    expect(await cli(rt, "--base-url", api.url, "monitor", "run", "Core", "--wait")).toBe(3);
+    expect(rt.errJson().at(-1)).toMatchObject({ code: "unauthorized", job: `monitor:${SET_ID}:${BATCH}:1` });
+  });
+
+  test("a stalled request times out instead of hanging", async () => {
+    const server = Bun.serve({ port: 0, fetch: () => new Promise<Response>(() => {}) });
+    try {
+      const rt = testRuntime({ env: { TOPCITED_API_KEY: KEY, TOPCITED_HTTP_TIMEOUT_MS: "200" } });
+      expect(await cli(rt, "--base-url", `http://127.0.0.1:${server.port}`, "usage")).toBe(1);
+      expect(rt.errJson().at(-1).code).toBe("network_error");
+    } finally {
+      server.stop(true);
+    }
   });
 
   test("a batch where every run failed → exit 1", async () => {
@@ -176,6 +244,28 @@ describe("monitor sets / queries / results", () => {
     expect(await cli(rt, "--base-url", api.url, "--brand", "Lumi", "monitor", "sets", "create", "X", "-p", "chatgpt")).toBe(1);
     expect(rt.errJson().at(-1).code).toBe("brand_mismatch");
     expect(api.calls("POST", "/api/v1/monitoring/query-sets")).toHaveLength(0);
+  });
+
+  test("sets create without -p is a usage error", async () => {
+    const rt = authed();
+    expect(await cli(rt, "monitor", "sets", "create", "X")).toBe(2);
+  });
+
+  test("sets create refuses queries that run on none of the platforms, before creating anything", async () => {
+    api = monitoringApi([["success"]]);
+    const rt = authed();
+    expect(await cli(rt, "--base-url", api.url, "monitor", "sets", "create", "X", "-p", "google", "-q", "best payroll app")).toBe(2);
+    expect(api.requests).toHaveLength(0);
+  });
+
+  test("queries rm reports what was deleted before a failure", async () => {
+    api = monitoringApi([["success"]], {
+      "DELETE /api/v1/monitoring/queries/q1": () => new Response(null, { status: 204 }),
+      "DELETE /api/v1/monitoring/queries/q2": () => json({ error: { code: "BAD_REQUEST", message: "last runnable query" } }, 400),
+    });
+    const rt = authed();
+    expect(await cli(rt, "--base-url", api.url, "monitor", "queries", "rm", "q1", "q2", "q3")).toBe(1);
+    expect(rt.errJson().at(-1)).toMatchObject({ deleted: ["q1"], failed: "q2", not_attempted: ["q3"] });
   });
 
   test("an unknown platform is a usage error", async () => {

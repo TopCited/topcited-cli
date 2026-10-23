@@ -1,34 +1,52 @@
 import type { ApiClient } from "./client";
 import type { Context } from "./context";
-import { usageError } from "./errors";
+import { CliError, Exit, usageError } from "./errors";
 import { classify, type Job, type JobState } from "./wait";
 
 /** Pollers for the backend's async job shapes. Each `ref` round-trips through `parseJobRef`. */
 
-/** Monitoring: `POST …/run` returns a batch_id; its runs show up in `GET /monitoring/runs`. */
+/**
+ * Monitoring: `POST …/run` returns a batch_id and the number of runs it
+ * created; the runs show up in `GET /monitoring/runs` (newest first, no
+ * batch filter). The page walk stops once it has found every run, or reaches a
+ * page entirely older than the batch, so other batches (newer or concurrent)
+ * listed around ours don't cut it short.
+ */
 export function monitorBatchJob(ctx: Context, client: ApiClient, setId: string, batchId: string, expected?: number): Job {
   return {
     kind: "monitor",
     id: batchId,
-    ref: `monitor:${setId}:${batchId}`,
+    ref: `monitor:${setId}:${batchId}${expected !== undefined ? `:${expected}` : ""}`,
     async poll(): Promise<JobState> {
-      const runs: { status: string; provider: string; query_text: string; error_message?: string | null }[] = [];
-      // Runs are newest first, so the batch is at the front; stop once past it.
-      for (let skip = 0; skip < 5000; skip += 100) {
+      const runs: { status: string; created_at: string }[] = [];
+      let oldestMine = Number.POSITIVE_INFINITY;
+      for (let skip = 0; skip < MAX_RUN_SCAN; skip += 100) {
         const page = await ctx.call(
           client.GET("/api/v1/monitoring/runs", { params: { query: { query_set_id: setId, skip, limit: 100 } } }),
         );
-        const mine = page.items.filter((r) => r.run_batch_id === batchId);
-        runs.push(...mine);
-        const reachedOlder = page.items.some((r) => r.run_batch_id !== batchId) && runs.length > 0;
-        if (reachedOlder || page.items.length < 100 || (expected !== undefined && runs.length >= expected)) break;
+        for (const r of page.items) {
+          if (r.run_batch_id !== batchId) continue;
+          runs.push(r);
+          oldestMine = Math.min(oldestMine, Date.parse(r.created_at));
+        }
+        if (expected !== undefined && runs.length >= expected) break;
+        const olderThanBatch = page.items.every((r) => Date.parse(r.created_at) < oldestMine - BATCH_SKEW_MS);
+        if (page.items.length < 100 || (runs.length && olderThanBatch)) break;
+      }
+      if (!runs.length) {
+        throw new CliError({
+          exit: Exit.NOT_FOUND,
+          code: "batch_not_found",
+          message: `No runs of batch ${batchId} in query set ${setId}.`,
+          hint: "Check the job reference; `topcited monitor sets show <set>` shows recent runs.",
+        });
       }
       const counts: Record<string, number> = {};
       for (const r of runs) counts[r.status] = (counts[r.status] ?? 0) + 1;
       const pending = runs.filter((r) => !classify(r.status).done).length;
       const succeeded = runs.filter((r) => classify(r.status).ok).length;
       const total = Math.max(expected ?? 0, runs.length);
-      const done = runs.length > 0 && runs.length >= total && pending === 0;
+      const done = runs.length >= total && pending === 0;
       const summary = Object.entries(counts)
         .map(([s, n]) => `${n} ${s}`)
         .join(", ");
@@ -37,12 +55,17 @@ export function monitorBatchJob(ctx: Context, client: ApiClient, setId: string, 
         // A batch with some failed runs (e.g. one platform down) still produced data.
         ok: succeeded > 0,
         status: done ? (succeeded === total ? "success" : succeeded > 0 ? "partial" : "failed") : "running",
-        progress: `${total - pending}/${total} runs finished${summary ? ` (${summary})` : ""}`,
+        progress: `${runs.length - pending}/${total} runs finished${summary ? ` (${summary})` : ""}`,
         result: { batch_id: batchId, query_set_id: setId, total, counts },
       };
     },
   };
 }
+
+/** Runs a single scan may page through (a set's whole history beyond this is unusual). */
+const MAX_RUN_SCAN = 5000;
+/** A batch's rows are inserted in one transaction; allow clock/ordering slack. */
+const BATCH_SKEW_MS = 60_000;
 
 /** Generic background tasks: `GET /tasks/{id}`. */
 export function taskJob(ctx: Context, client: ApiClient, taskId: string): Job {
@@ -118,9 +141,16 @@ export function parseJobRef(ctx: Context, client: ApiClient, ref: string): Job {
     if (parts.length !== n || parts.some((p) => !p)) throw usageError(`Bad job reference "${ref}".`, HINT);
   };
   switch (kind) {
-    case "monitor":
+    case "monitor": {
+      // monitor:<set>:<batch>[:<runs>]
+      if (parts.length === 3) {
+        const n = Number(parts[2]);
+        if (!Number.isInteger(n) || n < 1) throw usageError(`Bad job reference "${ref}".`, HINT);
+        return monitorBatchJob(ctx, client, parts[0]!, parts[1]!, n);
+      }
       need(2);
       return monitorBatchJob(ctx, client, parts[0]!, parts[1]!);
+    }
     case "task":
       need(1);
       return taskJob(ctx, client, parts[0]!);
@@ -140,4 +170,4 @@ export function parseJobRef(ctx: Context, client: ApiClient, ref: string): Job {
 }
 
 const HINT =
-  "Expected monitor:<set>:<batch>, task:<id>, report:<id>, audit:<site>:<run> or recommend:<kind>:<brand>:<run>.";
+  "Expected monitor:<set>:<batch>[:<runs>], task:<id>, report:<id>, audit:<site>:<run> or recommend:<kind>:<brand>:<run>.";

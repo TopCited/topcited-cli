@@ -6,6 +6,7 @@ import { CliError, Exit, usageError } from "../errors";
 import { day, fields, table, when } from "../format";
 import type { components } from "../generated/schema";
 import { monitorBatchJob } from "../jobs";
+import { pageAll } from "../paginate";
 import { availableCoins, confirmSpend, withSpendOptions, type SpendOptions } from "../spend";
 import { parseTimeout, waitFor, withWaitOptions, type WaitOptions } from "../wait";
 import type { Action } from "./types";
@@ -34,7 +35,8 @@ export function registerMonitor(program: Command, action: Action): void {
     .command("create")
     .description("Create a query set for the account's active brand")
     .argument("<name>", "set name")
-    .requiredOption("-p, --platform <platform>", `platform to monitor; repeatable (${PLATFORMS.join(", ")})`, collect, [])
+    // No [] default: commander only enforces a required option that is undefined.
+    .requiredOption("-p, --platform <platform>", `platform to monitor; repeatable (${PLATFORMS.join(", ")})`, collect)
     .option("-q, --query <text>", "prompt to track; repeatable", collect, [])
     .option("--type <type>", `query type for --query (${QUERY_TYPES.join(", ")})`, "llm_prompt")
     .option("--manual", "don't schedule runs; only run with `monitor run`")
@@ -84,17 +86,12 @@ export function registerMonitor(program: Command, action: Action): void {
     .action(action(results));
 }
 
-function collect(value: string, prev: string[]): string[] {
+function collect(value: string, prev: string[] = []): string[] {
   return [...prev, value];
 }
 
-async function allSets(ctx: Context, client: ApiClient): Promise<QuerySet[]> {
-  const out: QuerySet[] = [];
-  for (let skip = 0; ; skip += 100) {
-    const page = await ctx.call(client.GET("/api/v1/monitoring/query-sets", { params: { query: { skip, limit: 100 } } }));
-    out.push(...page);
-    if (page.length < 100) return out;
-  }
+function allSets(ctx: Context, client: ApiClient): Promise<QuerySet[]> {
+  return pageAll((skip, limit) => ctx.call(client.GET("/api/v1/monitoring/query-sets", { params: { query: { skip, limit } } })));
 }
 
 /** Resolve a set by id, id prefix (6+) or name; the active brand's sets win name ties. */
@@ -170,6 +167,13 @@ async function createSet(
   const bad = opts.platform.filter((p) => !PLATFORMS.includes(p as Platform));
   if (bad.length) throw usageError(`Unknown platform(s): ${bad.join(", ")}.`, `Use: ${PLATFORMS.join(", ")}`);
   const type = parseType(opts.type);
+  // Check before creating: the API has no delete for sets, so a failed query add would leave a dead one.
+  if (opts.query.length && !opts.platform.some((p) => runsOn(type, p))) {
+    throw usageError(
+      `${type} queries don't run on ${opts.platform.join(", ")}.`,
+      `llm_prompt runs on AI platforms, search_keyword on ${[...SEARCH_PLATFORMS].join("/")}; universal on both.`,
+    );
+  }
   const client = await ctx.api();
   requireServerBrand(await activeBrand(ctx, client), "Creating a query set");
   const set = await ctx.call(
@@ -177,14 +181,29 @@ async function createSet(
       body: { name, platforms: opts.platform as Platform[], ...(opts.manual ? { run_mode: "manual" as const } : {}) },
     }),
   );
-  const added = opts.query.length
-    ? await ctx.call(
-        client.POST("/api/v1/monitoring/query-sets/{query_set_id}/queries", {
-          params: { path: { query_set_id: set.id } },
-          body: opts.query.map((text) => ({ text, query_type: type })),
-        }),
-      )
-    : [];
+  let added: Awaited<ReturnType<typeof addTo>> = [];
+  const addTo = () =>
+    ctx.call(
+      client.POST("/api/v1/monitoring/query-sets/{query_set_id}/queries", {
+        params: { path: { query_set_id: set.id } },
+        body: opts.query.map((text) => ({ text, query_type: type })),
+      }),
+    );
+  if (opts.query.length) {
+    try {
+      added = await addTo();
+    } catch (e) {
+      if (!(e instanceof CliError)) throw e;
+      throw new CliError({
+        exit: e.exit,
+        code: e.code,
+        status: e.status,
+        message: `Created query set ${set.name} (${set.id}), but adding its queries failed: ${e.message}`,
+        hint: `Retry with \`topcited monitor queries add ${set.id} …\`.`,
+        extra: { query_set_id: set.id },
+      });
+    }
+  }
   ctx.print({ ...set, queries: added }, `Created query set ${set.name} (${set.id}) with ${added.length} quer${added.length === 1 ? "y" : "ies"}.`);
 }
 
@@ -230,10 +249,31 @@ async function addQueries(ctx: Context, opts: { type: string }, ref: string, tex
 
 async function removeQueries(ctx: Context, _opts: unknown, ids: string[]): Promise<void> {
   const client = await ctx.api();
+  const deleted: string[] = [];
   for (const id of ids) {
-    await ctx.call(client.DELETE("/api/v1/monitoring/queries/{query_id}", { params: { path: { query_id: id } } }));
+    try {
+      await ctx.call(client.DELETE("/api/v1/monitoring/queries/{query_id}", { params: { path: { query_id: id } } }));
+    } catch (e) {
+      if (!(e instanceof CliError)) throw e;
+      throw new CliError({
+        exit: e.exit,
+        code: e.code,
+        status: e.status,
+        message: `Deleting ${id} failed: ${e.message}${deleted.length ? ` (already deleted: ${deleted.join(", ")})` : ""}`,
+        hint: e.hint,
+        extra: { deleted, failed: id, not_attempted: ids.slice(deleted.length + 1) },
+      });
+    }
+    deleted.push(id);
   }
-  ctx.print({ deleted: ids }, `Deleted ${ids.length} quer${ids.length === 1 ? "y" : "ies"}.`);
+  ctx.print({ deleted }, `Deleted ${deleted.length} quer${deleted.length === 1 ? "y" : "ies"}.`);
+}
+
+/** Does a query of this type produce a run on this platform? (backend `query_runs_on`) */
+function runsOn(type: string | undefined, platform: string): boolean {
+  if (type === "search_keyword") return SEARCH_PLATFORMS.has(platform);
+  if (type === "llm_prompt") return !SEARCH_PLATFORMS.has(platform);
+  return true;
 }
 
 /** Runs a trigger creates: active queries × platforms they route to (1 T-coin each). */
@@ -242,11 +282,7 @@ export function estimateRuns(detail: QuerySetDetail): number {
   const platforms = detail.platforms.filter((p) => !unserved.has(p));
   let runs = 0;
   for (const q of detail.queries ?? []) {
-    if (!q.is_active) continue;
-    for (const p of platforms) {
-      const search = SEARCH_PLATFORMS.has(p);
-      if (q.query_type === "universal" || (q.query_type === "search_keyword") === search) runs++;
-    }
+    if (q.is_active) runs += platforms.filter((p) => runsOn(q.query_type, p)).length;
   }
   return runs;
 }

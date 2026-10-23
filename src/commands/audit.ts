@@ -5,6 +5,7 @@ import { CliError, Exit, usageError } from "../errors";
 import { fields, table, when } from "../format";
 import type { components } from "../generated/schema";
 import { auditJob } from "../jobs";
+import { pageAll } from "../paginate";
 import { availableCoins, confirmSpend, withSpendOptions, type SpendOptions } from "../spend";
 import { parseTimeout, waitFor, withWaitOptions, type WaitOptions } from "../wait";
 import type { Action } from "./types";
@@ -53,8 +54,14 @@ export function domainOf(input: string): string {
   }
 }
 
-async function sites(ctx: Context, client: ApiClient): Promise<Site[]> {
-  return ctx.call(client.GET("/api/v1/seo/sites", { params: { query: { limit: 100 } } }));
+function sites(ctx: Context, client: ApiClient): Promise<Site[]> {
+  return pageAll((skip, limit) => ctx.call(client.GET("/api/v1/seo/sites", { params: { query: { skip, limit } } })));
+}
+
+function auditRuns(ctx: Context, client: ApiClient, siteId: string): Promise<AuditRun[]> {
+  return pageAll((skip, limit) =>
+    ctx.call(client.GET("/api/v1/seo/sites/{site_id}/audit-runs", { params: { path: { site_id: siteId }, query: { skip, limit } } })),
+  );
 }
 
 function findSite(all: Site[], ref: string): Site | undefined {
@@ -105,8 +112,7 @@ async function show(ctx: Context, opts: { site?: string }, runId: string): Promi
     return printRun(ctx, client, site, runId);
   }
   for (const site of all) {
-    const runs = await ctx.call(client.GET("/api/v1/seo/sites/{site_id}/audit-runs", { params: { path: { site_id: site.id } } }));
-    if (runs.some((r) => r.id === runId)) return printRun(ctx, client, site, runId);
+    if ((await auditRuns(ctx, client, site.id)).some((r) => r.id === runId)) return printRun(ctx, client, site, runId);
   }
   throw new CliError({ exit: Exit.NOT_FOUND, code: "audit_not_found", message: `No audit run ${runId} on your sites.` });
 }
@@ -115,7 +121,10 @@ async function printRun(ctx: Context, client: ApiClient, site: Site, runId: stri
   const path = { site_id: site.id, run_id: runId };
   const [runRow, issues] = await Promise.all([
     ctx.call(client.GET("/api/v1/seo/sites/{site_id}/audit-runs/{run_id}", { params: { path } })),
-    ctx.call(client.GET("/api/v1/seo/sites/{site_id}/audit-runs/{run_id}/issues", { params: { path, query: { limit: 100 } } })),
+    pageAll(
+      (skip, limit) => ctx.call(client.GET("/api/v1/seo/sites/{site_id}/audit-runs/{run_id}/issues", { params: { path, query: { skip, limit } } })),
+      500,
+    ),
   ]);
   ctx.print({ site_id: site.id, domain: site.domain, run: runRow, issues }, () =>
     [
@@ -159,7 +168,7 @@ async function list(ctx: Context, opts: { site?: string }): Promise<void> {
   const rows = (
     await Promise.all(
       all.map(async (site) =>
-        (await ctx.call(client.GET("/api/v1/seo/sites/{site_id}/audit-runs", { params: { path: { site_id: site.id } } }))).map((r) => ({
+        (await auditRuns(ctx, client, site.id)).map((r) => ({
           ...r,
           domain: site.domain,
         })),

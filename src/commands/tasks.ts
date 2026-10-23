@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import type { Context } from "../context";
+import { usageError } from "../errors";
 import { fields, table, when } from "../format";
 import { parseJobRef, taskJob } from "../jobs";
 import { parseTimeout, waitFor, withWaitOptions, type WaitOptions } from "../wait";
@@ -12,6 +13,7 @@ export function registerTasks(program: Command, action: Action): void {
     .description("List background tasks")
     .option("--status <status>", "filter by status")
     .option("--type <type>", "filter by task type")
+    .option("--limit <n>", "newest N tasks (max 100)", "50")
     .addHelpText("after", "\nExample:\n  $ topcited tasks list --status running")
     .action(action(list));
   withWaitOptions(tasks.command("show").description("Show a task").argument("<id>", "task id"))
@@ -28,11 +30,11 @@ export function registerTasks(program: Command, action: Action): void {
     .action(action(waitCommand));
 }
 
-async function list(ctx: Context, opts: { status?: string; type?: string }): Promise<void> {
+async function list(ctx: Context, opts: { status?: string; type?: string; limit: string }): Promise<void> {
+  const limit = Number(opts.limit);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw usageError("--limit must be 1–100.");
   const client = await ctx.api();
-  const rows = await ctx.call(
-    client.GET("/api/v1/tasks", { params: { query: { status: opts.status, task_type: opts.type, limit: 100 } } }),
-  );
+  const rows = await ctx.call(client.GET("/api/v1/tasks", { params: { query: { status: opts.status, task_type: opts.type, limit } } }));
   ctx.print(rows, () =>
     table(rows, [
       ["ID", (t) => t.id],
