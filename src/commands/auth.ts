@@ -101,14 +101,14 @@ async function login(ctx: Context, opts: LoginOptions): Promise<void> {
 
   let pending: PendingLogin;
   if (opts.continue) {
-    const saved = await ctx.rt.store.readPending<PendingLogin>();
-    if (!saved || saved.base_url !== ctx.baseUrl) {
+    const saved = await ctx.rt.store.readPending<PendingLogin>(ctx.baseUrl);
+    if (!saved) {
       throw usageError("No login is waiting for approval.", "Run `topcited auth login` to start one.");
     }
     pending = saved;
   } else {
     pending = await requestDeviceCode(ctx);
-    await ctx.rt.store.writePending(pending);
+    await ctx.rt.store.writePending(ctx.baseUrl, pending);
     announce(ctx, pending, opts);
     if (!opts.wait) {
       ctx.print(
@@ -126,7 +126,7 @@ async function login(ctx: Context, opts: LoginOptions): Promise<void> {
   }
 
   const issued = await pollForKey(ctx, pending);
-  await ctx.rt.store.clearPending();
+  await ctx.rt.store.clearPending(ctx.baseUrl);
   await saveAndReport(ctx, issued);
 }
 
@@ -188,7 +188,7 @@ async function pollForKey(ctx: Context, p: PendingLogin): Promise<DeviceToken & 
       return { ...body, api_key: apiKey };
     }
     if (res.status === 409) {
-      await ctx.rt.store.clearPending();
+      await ctx.rt.store.clearPending(ctx.baseUrl);
       throw new CliError({
         exit: Exit.CONFLICT,
         code: "api_key_limit",
@@ -204,16 +204,16 @@ async function pollForKey(ctx: Context, p: PendingLogin): Promise<DeviceToken & 
         interval += 5000; // RFC 8628 §3.5
         continue;
       case "access_denied":
-        await ctx.rt.store.clearPending();
+        await ctx.rt.store.clearPending(ctx.baseUrl);
         throw new CliError({ exit: Exit.AUTH, code: "access_denied", status: res.status, message: "Sign-in was denied in the browser." });
       case "expired_token":
-        await ctx.rt.store.clearPending();
+        await ctx.rt.store.clearPending(ctx.baseUrl);
         throw expired();
       default:
         throw await ctx.httpError(res);
     }
   }
-  await ctx.rt.store.clearPending();
+  await ctx.rt.store.clearPending(ctx.baseUrl);
   throw expired();
 }
 
@@ -280,7 +280,7 @@ async function findKey(ctx: Context, apiKey: string): Promise<ApiKeyRead | undef
 
 async function logout(ctx: Context): Promise<void> {
   const removed = await ctx.rt.store.deleteCredential(ctx.baseUrl);
-  await ctx.rt.store.clearPending();
+  await ctx.rt.store.clearPending(ctx.baseUrl);
   if (ctx.rt.env.TOPCITED_API_KEY) ctx.warn("env_key_set", "TOPCITED_API_KEY is still set in your environment.");
   ctx.print(
     { logged_out: removed, base_url: ctx.baseUrl, key_revoked: false },

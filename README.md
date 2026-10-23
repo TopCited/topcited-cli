@@ -44,8 +44,10 @@ warns when fewer than 14 remain.
 ## For agents
 
 - stdout is JSON when it isn't a terminal, or with `--json`.
-- Errors are one JSON object on stderr: `{"code", "message", "hint", "status"}`.
-  Warnings in JSON mode are JSON lines too: `{"warning", "message"}`.
+- stderr in JSON mode is JSON Lines. A failure always ends with the error
+  envelope `{"code", "message", "hint", "status"}` as the last line; earlier
+  lines are warnings (`{"warning", "message"}`) or, for `auth login`, the
+  `{"device_authorization": …}` prompt. Parse the last line.
 - Nothing prompts without a TTY.
 - Exit codes: `0` ok, `1` error, `2` usage, `3` auth, `4` payment/quota,
   `5` not found, `6` conflict, `7` `--wait` timed out.

@@ -62,6 +62,14 @@ describe("error envelope and usage errors", () => {
     expect(rt.err()).toBe("error: Not logged in.\nhint: Run `topcited auth login`, or set TOPCITED_API_KEY.\n");
   });
 
+  test("a bare group command is a usage error for programs, help for people", async () => {
+    const pipe = testRuntime();
+    expect(await cli(pipe, "auth")).toBe(2);
+    expect(pipe.errJson().at(-1)).toMatchObject({ code: "usage" });
+    const person = testRuntime({ tty: true });
+    expect(await cli(person, "auth")).toBe(0);
+  });
+
   test("--help exits 0 and lists common flows", async () => {
     const rt = testRuntime();
     expect(await cli(rt, "--help")).toBe(0);

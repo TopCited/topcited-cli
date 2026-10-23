@@ -1,4 +1,4 @@
-import { chmod, mkdir, rename, rm } from "node:fs/promises";
+import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -52,14 +52,25 @@ async function readJson<T>(path: string, fallback: T): Promise<T> {
   }
 }
 
-/** Atomic write (temp file + rename) so a crash never leaves half a credentials file. */
+/**
+ * Atomic write (temp file + rename) so a crash never leaves half a credentials
+ * file. The temp file is created with its final mode, so a secret is never
+ * readable by others even for a moment. The random suffix keeps concurrent
+ * writers in one process from colliding.
+ */
 async function writeJson(path: string, data: unknown, mode: number): Promise<void> {
   const dir = join(path, "..");
   await mkdir(dir, { recursive: true, mode: 0o700 });
-  const tmp = `${path}.${process.pid}.tmp`;
-  await Bun.write(tmp, JSON.stringify(data, null, 2) + "\n");
-  await chmod(tmp, mode);
-  await rename(tmp, path);
+  if (mode === 0o600) await chmod(dir, 0o700); // mkdir doesn't tighten an existing dir
+  const tmp = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await writeFile(tmp, JSON.stringify(data, null, 2) + "\n", { mode, flag: "wx" });
+    await chmod(tmp, mode); // the umask can only have removed bits; make it exact
+    await rename(tmp, path);
+  } catch (e) {
+    await rm(tmp, { force: true });
+    throw e;
+  }
 }
 
 export class Store {
@@ -117,14 +128,21 @@ export class Store {
     await writeJson(this.statePath, state, 0o644);
   }
 
-  readPending<T>(): Promise<T | undefined> {
-    return readJson<T | undefined>(this.pendingLoginPath, undefined);
+  /** Device logins waiting for approval, keyed by base URL like credentials. */
+  async readPending<T>(baseUrl: string): Promise<T | undefined> {
+    return (await readJson<Record<string, T>>(this.pendingLoginPath, {}))[baseUrl];
   }
-  async writePending(data: unknown): Promise<void> {
-    await writeJson(this.pendingLoginPath, data, 0o600);
+  async writePending(baseUrl: string, data: unknown): Promise<void> {
+    const all = await readJson<Record<string, unknown>>(this.pendingLoginPath, {});
+    all[baseUrl] = data;
+    await writeJson(this.pendingLoginPath, all, 0o600);
   }
-  async clearPending(): Promise<void> {
-    await rm(this.pendingLoginPath, { force: true });
+  async clearPending(baseUrl: string): Promise<void> {
+    const all = await readJson<Record<string, unknown>>(this.pendingLoginPath, {});
+    if (!(baseUrl in all)) return;
+    delete all[baseUrl];
+    if (Object.keys(all).length) await writeJson(this.pendingLoginPath, all, 0o600);
+    else await rm(this.pendingLoginPath, { force: true });
   }
 }
 

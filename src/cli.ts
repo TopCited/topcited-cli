@@ -60,8 +60,13 @@ export async function run(argv: string[], rt: Runtime = defaultRuntime()): Promi
   } catch (e) {
     if (e instanceof CommanderError) {
       if (e.code === "commander.helpDisplayed" || e.code === "commander.version" || e.exitCode === 0) return Exit.OK;
-      // Bare `topcited` / `topcited auth` prints help: not an error for a human.
-      if (e.code === "commander.help") return Exit.OK;
+      // Bare `topcited` / `topcited auth` prints help: fine for a person, a usage
+      // error for a program (its stdout got help text, not JSON).
+      if (e.code === "commander.help") {
+        if (!jsonHint) return Exit.OK;
+        emitError(rt, new CliError({ exit: Exit.USAGE, code: "usage", message: "Missing subcommand.", hint: "See `topcited <command> --help`." }), true);
+        return Exit.USAGE;
+      }
       const message = e.message.replace(/^error: /, "");
       if (jsonHint) emitError(rt, new CliError({ exit: Exit.USAGE, code: "usage", message }), true);
       return Exit.USAGE;

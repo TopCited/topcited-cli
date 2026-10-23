@@ -49,7 +49,7 @@ describe("auth login (device flow)", () => {
     const creds = await rt.store.readCredentials();
     expect(creds[api.url]).toMatchObject({ api_key: KEY, key_name: "topcited-cli on box", user_email: ME.email });
     expect(statSync(rt.store.credentialsPath).mode & 0o777).toBe(0o600);
-    expect(await rt.store.readPending()).toBeUndefined();
+    expect(await rt.store.readPending(api.url)).toBeUndefined();
     expect(rt.opened).toEqual([]); // no TTY → no browser
   });
 
@@ -113,6 +113,18 @@ describe("auth login (device flow)", () => {
     expect(await cli(rt2, "--base-url", api.url, "auth", "login", "--continue")).toBe(0);
     expect(rt2.outJson().logged_in).toBe(true);
     expect(api.calls("POST", "/api/v1/auth/device/code")).toHaveLength(1);
+  });
+
+  test("pending logins are kept per host", async () => {
+    api = deviceApi([issued]);
+    const rt = testRuntime();
+    expect(await cli(rt, "--base-url", api.url, "auth", "login", "--no-wait")).toBe(0);
+    const other = testRuntime();
+    other.store = rt.store;
+    // A login started against another host must not clobber this one.
+    await other.store.writePending("https://api.staging.example", { device_code: "x" });
+    expect(await cli(other, "--base-url", api.url, "auth", "login", "--continue")).toBe(0);
+    expect(await rt.store.readPending("https://api.staging.example")).toEqual({ device_code: "x" });
   });
 
   test("--continue with nothing pending is a usage error", async () => {
@@ -198,6 +210,17 @@ describe("auth status / token / logout", () => {
     expect(await cli(rt, "auth", "logout")).toBe(0);
     expect(rt.outJson()).toMatchObject({ logged_out: true, key_revoked: false });
     expect(Object.keys(await rt.store.readCredentials())).toEqual(["https://api.staging.example"]);
+  });
+});
+
+describe("credential files", () => {
+  test("tightens an existing config dir to 0700 when writing a secret", async () => {
+    const rt = testRuntime();
+    const { chmod } = await import("node:fs/promises");
+    await chmod(rt.dir, 0o755);
+    await rt.store.setCredential("https://api.topcited.ai", { api_key: KEY, key_prefix: "x", created_at: "" });
+    expect(statSync(rt.dir).mode & 0o777).toBe(0o700);
+    expect(statSync(rt.store.credentialsPath).mode & 0o777).toBe(0o600);
   });
 });
 
