@@ -78,7 +78,7 @@ Examples:
     .command("token")
     .description("Show the API key in use (masked unless --show)")
     .option("--show", "print the full key")
-    .addHelpText("after", '\nExample:\n  $ curl -H "Authorization: Bearer $(topcited auth token --show)" …')
+    .addHelpText("after", '\nExamples:\n  $ topcited auth token\n  $ curl -H "Authorization: Bearer $(topcited auth token --show)" …')
     .action(action(token));
 }
 

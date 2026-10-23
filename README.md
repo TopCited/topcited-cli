@@ -46,6 +46,16 @@ warns when fewer than 14 remain.
 ```
 topcited auth login | logout | status | token [--show]
 topcited brand list | use <id|name> | show [brand]
+topcited monitor sets list | create | show
+topcited monitor queries add | rm
+topcited monitor run <set> [--wait] [--dry-run] [--yes]
+topcited monitor results [--set] [--since] [--until]  # summary, gaps, share of voice
+topcited audit run <url> [--wait] | show <id> | list
+topcited recommend [keywords|prompts|content] [--wait] [--list]
+topcited report generate [--wait] | list | show <id> | download <id>
+topcited competitors list | add
+topcited tasks list | show <id> [--wait]
+topcited wait <job>                             # resume any --wait
 topcited usage                                  # plan, T-coins, quotas, monitoring forecast
 topcited api <path> [-X M] [-d json|@file] [-f k=v] [-F k=v] [--paginate]
 topcited doctor                                 # config, auth, connectivity, version skew
@@ -63,7 +73,12 @@ API host.
   envelope `{"code", "message", "hint", "status"}` as the last line; earlier
   lines are warnings (`{"warning", "message"}`) or, for `auth login`, the
   `{"device_authorization": …}` prompt. Parse the last line.
-- Nothing prompts without a TTY.
+- Nothing prompts without a TTY. Commands that spend T-coins ask for
+  confirmation only on a TTY (`--yes` skips it); `--dry-run` prints the
+  estimate and exits 0 without spending.
+- `--wait` polls with backoff until the job ends (`--timeout`, default 1200 s).
+  Async commands print a `job` reference such as `monitor:<set>:<batch>:<runs>`;
+  `topcited wait <job>` resumes waiting.
 - Exit codes: `0` ok, `1` error, `2` usage, `3` auth, `4` payment/quota,
   `5` not found, `6` conflict, `7` `--wait` timed out.
 

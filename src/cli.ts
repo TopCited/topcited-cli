@@ -1,8 +1,14 @@
 import { Command, CommanderError } from "commander";
 import { registerApi } from "./commands/api";
+import { registerAudit } from "./commands/audit";
 import { registerAuth } from "./commands/auth";
 import { registerBrand } from "./commands/brand";
+import { registerCompetitors } from "./commands/competitors";
 import { registerDoctor } from "./commands/doctor";
+import { registerMonitor } from "./commands/monitor";
+import { registerRecommend } from "./commands/recommend";
+import { registerReport } from "./commands/report";
+import { registerTasks } from "./commands/tasks";
 import { registerUpgrade } from "./commands/upgrade";
 import { registerUsage } from "./commands/usage";
 import type { Action, Register } from "./commands/types";
@@ -12,12 +18,29 @@ import { defaultRuntime, type Runtime } from "./runtime";
 import { checkForUpdate } from "./update-notice";
 import { VERSION } from "./version";
 
-const REGISTER: Register[] = [registerAuth, registerBrand, registerUsage, registerApi, registerDoctor, registerUpgrade];
+const REGISTER: Register[] = [
+  registerAuth,
+  registerBrand,
+  registerMonitor,
+  registerAudit,
+  registerRecommend,
+  registerReport,
+  registerCompetitors,
+  registerTasks,
+  registerUsage,
+  registerApi,
+  registerDoctor,
+  registerUpgrade,
+];
 
 const HELP_FOOTER = `
 Common flows:
   $ topcited auth login                    sign in (prints a URL and code to approve)
   $ topcited brand list                    your brands
+  $ topcited monitor sets list             tracked prompt sets for the active brand
+  $ topcited monitor run <set> --wait      run one now (spends T-coins; --dry-run to estimate)
+  $ topcited monitor results               visibility, gaps and share of voice
+  $ topcited recommend prompts --wait      prompts worth tracking
   $ topcited usage                         plan and T-coin balance
   $ topcited api /monitoring/query-sets    any public endpoint, raw
   $ topcited doctor                        diagnose config, auth, connectivity
