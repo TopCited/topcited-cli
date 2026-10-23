@@ -1,0 +1,26 @@
+{
+  "name": "topcited-cli-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TopCited CLI source (published to npm as @topcited/cli via npm/)",
+  "type": "module",
+  "bin": {
+    "topcited": "src/index.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build": "bun run scripts/build.ts",
+    "gen:client": "bun run scripts/gen-client.ts"
+  },
+  "dependencies": {
+    "commander": "^15.0.0",
+    "openapi-fetch": "^0.17.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "5"
+  }
+}

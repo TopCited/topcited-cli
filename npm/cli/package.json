@@ -1,0 +1,11 @@
+{
+  "name": "@topcited/cli",
+  "version": "0.0.0",
+  "description": "TopCited CLI: AI visibility (GEO) from your terminal and your agents",
+  "homepage": "https://topcited.ai",
+  "repository": { "type": "git", "url": "git+https://github.com/TopCited/topcited-cli.git" },
+  "bin": { "topcited": "bin/topcited.js" },
+  "files": ["bin/topcited.js"],
+  "engines": { "node": ">=16" },
+  "optionalDependencies": {}
+}
