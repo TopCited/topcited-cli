@@ -16,14 +16,17 @@ topcited brand list
 | Path | Command |
 |---|---|
 | Script | `curl -fsSL https://topcited.ai/install.sh \| sh` (Linux, macOS; installs to `~/.local/bin`) |
+| Windows | `irm https://topcited.ai/install.ps1 \| iex` (installs to `%LOCALAPPDATA%\topcited\bin` and adds it to your PATH) |
+| Homebrew | `brew install topcited/tap/topcited` |
 | npm | `npm i -g @topcited/cli` or `npx @topcited/cli …` |
 | Binary | Download from [Releases](https://github.com/TopCited/topcited-cli/releases) and check it against `SHA256SUMS` |
 
-`install.sh` honours `TOPCITED_VERSION` (e.g. `v0.1.0`) and `TOPCITED_INSTALL_DIR`.
+`install.sh` and `install.ps1` honour `TOPCITED_VERSION` (e.g. `v0.1.0`) and `TOPCITED_INSTALL_DIR`.
 
-> While this repo is private, release downloads need GitHub access, and npm
-> publishing is off (`.github/workflows/npm-publish.yml` is manual). Both open
-> up at the Phase 2 launch.
+> While this repo is private, release downloads need GitHub access, npm
+> publishing is off (`.github/workflows/npm-publish.yml` is manual), and the
+> Homebrew tap (`TopCited/homebrew-tap`) doesn't exist yet. All three open up
+> at the Phase 2 launch.
 
 ## Sign in
 
@@ -124,7 +127,10 @@ Actions to create PRs.
 1. Bump `version` in `package.json` and merge.
 2. Push the tag `v<version>`. `release.yml` builds linux-x64, linux-arm64,
    darwin-x64, darwin-arm64 and windows-x64, and publishes a GitHub Release
-   with `SHA256SUMS` and `install.sh`.
+   with `SHA256SUMS`, `install.sh` and `install.ps1`. For a final (non `-rc`)
+   tag it then renders `Formula/topcited.rb` with the release's checksums and
+   pushes it to `TopCited/homebrew-tap` (skipped with a warning until the
+   `HOMEBREW_TAP_TOKEN` secret exists).
 3. npm (when enabled): run the **Publish to npm** workflow with the tag. It
    publishes `@topcited/cli-<os>-<cpu>` platform packages and the
    `@topcited/cli` launcher, which picks the right one through

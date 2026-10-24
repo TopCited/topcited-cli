@@ -22,3 +22,18 @@ jobs:
         run: |
           bun run build --target linux-x64
           ./dist/topcited-linux-x64 --version
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - run: bun install --frozen-lockfile
+      - name: install.ps1 against a local server (real Windows PATH handling)
+        run: bun test test/install-ps1.test.ts
+      - name: Compile and smoke-test windows-x64
+        run: |
+          bun run build --target windows-x64
+          ./dist/topcited-windows-x64.exe --version
