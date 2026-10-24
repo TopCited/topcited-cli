@@ -48,5 +48,5 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
         run: |
           for dir in dist/npm/cli-*/ dist/npm/cli/; do
-            (cd "$dir" && npm publish --access public $PROVENANCE $DRY_RUN)
+            (cd "$dir" && npm publish --access public ${PROVENANCE:+"$PROVENANCE"} ${DRY_RUN:+"$DRY_RUN"})
           done

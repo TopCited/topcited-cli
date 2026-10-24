@@ -122,6 +122,15 @@ Set a `SPEC_SYNC_TOKEN` secret (fine-grained; contents + pull requests on this
 repo): PRs opened with `GITHUB_TOKEN` don't run CI, and this repo doesn't allow
 Actions to create PRs.
 
+### Nightly agent eval
+
+`.github/workflows/agent-eval.yml` gives headless Claude Code a clean runner and
+the prompt "Install the TopCited CLI and tell me my brand's top visibility
+gaps", against staging. `scripts/eval/check.mjs` grades the run: the CLI got
+installed, a results command exits 0, and the answer names real gaps. It is
+skipped until the `ANTHROPIC_API_KEY` and `TOPCITED_STAGING_API_KEY` secrets
+exist; `SLACK_EVAL_WEBHOOK` adds failure alerts.
+
 ### Releasing
 
 1. Bump `version` in `package.json` and merge.
