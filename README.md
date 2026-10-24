@@ -25,6 +25,48 @@ topcited brand list
 > publishing is off (`.github/workflows/npm-publish.yml` is manual). Both open
 > up at the Phase 2 launch.
 
+## Sign in
+
+`topcited auth login` prints a URL and a code, opens your browser when it can,
+and waits while you approve. Approval issues an ordinary API key named
+`topcited-cli on <hostname>`; logging in again on the same machine replaces it.
+
+- No live terminal (some agents): `topcited auth login --no-wait` prints the
+  code and exits; run `topcited auth login --continue` after approving.
+- CI: `echo "$KEY" | topcited auth login --with-token`, or just set `TOPCITED_API_KEY`.
+- `topcited auth status`, `topcited auth token [--show]`, `topcited auth logout`.
+
+Keys are stored in `~/.config/topcited/credentials.json` (mode 0600), one per
+API host. `TOPCITED_API_KEY` overrides the stored key and `TOPCITED_BASE_URL`
+(or `--base-url`) overrides the API host. Keys expire after 90 days; the CLI
+warns when fewer than 14 remain.
+
+## Commands
+
+```
+topcited auth login | logout | status | token [--show]
+topcited brand list | use <id|name> | show [brand]
+topcited usage                                  # plan, T-coins, quotas, monitoring forecast
+topcited api <path> [-X M] [-d json|@file] [-f k=v] [-F k=v] [--paginate]
+topcited doctor                                 # config, auth, connectivity, version skew
+topcited upgrade [--check]
+```
+
+`topcited <command> --help` shows a runnable example for each. `--brand`
+(or `TOPCITED_BRAND`) picks a brand for one command; `brand use` stores one per
+API host.
+
+## For agents
+
+- stdout is JSON when it isn't a terminal, or with `--json`.
+- stderr in JSON mode is JSON Lines. A failure always ends with the error
+  envelope `{"code", "message", "hint", "status"}` as the last line; earlier
+  lines are warnings (`{"warning", "message"}`) or, for `auth login`, the
+  `{"device_authorization": …}` prompt. Parse the last line.
+- Nothing prompts without a TTY.
+- Exit codes: `0` ok, `1` error, `2` usage, `3` auth, `4` payment/quota,
+  `5` not found, `6` conflict, `7` `--wait` timed out.
+
 ## Development
 
 ```sh
