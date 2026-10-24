@@ -1,6 +1,7 @@
 {
   "name": "topcited-cli-workspace",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "description": "TopCited CLI source (published to npm as @topcited/cli via npm/)",
   "type": "module",

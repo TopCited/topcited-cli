@@ -91,7 +91,22 @@ describe("auth login (device flow)", () => {
     const rt = testRuntime();
     expect(await cli(rt, "--base-url", api.url, "auth", "login")).toBe(3);
     expect(rt.errJson().at(-1).code).toBe("expired_token");
-    expect(rt.sleeps.length).toBe(600 / 5);
+    // 120 polls inside the 600 s window, plus one final poll past the deadline.
+    expect(rt.sleeps.length).toBe(600 / 5 + 1);
+  });
+
+  test("an approval landing after the local deadline is still picked up", async () => {
+    api = deviceApi([...Array(120).fill(pending), issued]);
+    const rt = testRuntime();
+    expect(await cli(rt, "--base-url", api.url, "auth", "login")).toBe(0);
+  });
+
+  test("invalid_grant (already redeemed / long expired) → exit 3 like an expired code", async () => {
+    api = deviceApi([() => json({ error: "invalid_grant" }, 400)]);
+    const rt = testRuntime();
+    expect(await cli(rt, "--base-url", api.url, "auth", "login")).toBe(3);
+    expect(rt.errJson().at(-1).code).toBe("expired_token");
+    expect(await rt.store.getCredential(api.url)).toBeUndefined();
   });
 
   test("409 at the key cap → exit 6 with a revoke hint", async () => {

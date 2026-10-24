@@ -5,6 +5,7 @@ import type { Runtime } from "./runtime";
 import { userAgent } from "./version";
 
 export const EXPIRY_WARNING_DAYS = 14;
+const REQUEST_TIMEOUT_MS = 60_000;
 const DAY_MS = 86_400_000;
 
 export interface GlobalOptions {
@@ -113,7 +114,16 @@ export class Context {
   }
 
   client(apiKey?: string): ApiClient {
-    return createApiClient({ baseUrl: this.baseUrl, apiKey, fetch: this.rt.fetch });
+    return createApiClient({ baseUrl: this.baseUrl, apiKey, fetch: this.fetch });
+  }
+
+  /** rt.fetch with a per-request timeout, so a stalled connection can't hang a command (or overrun --timeout). */
+  readonly fetch: typeof fetch = ((input: string | URL | Request, init?: RequestInit) =>
+    this.rt.fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(this.requestTimeoutMs) })) as typeof fetch;
+
+  get requestTimeoutMs(): number {
+    const v = Number(this.rt.env.TOPCITED_HTTP_TIMEOUT_MS);
+    return Number.isFinite(v) && v > 0 ? v : REQUEST_TIMEOUT_MS;
   }
 
   /** Unwrap an openapi-fetch call: data on 2xx, a mapped CliError otherwise. */
@@ -149,7 +159,7 @@ export class Context {
     const url = /^https?:\/\//.test(path) ? path : `${this.baseUrl}${path.startsWith("/") ? "" : "/"}${path}`;
     let res: Response;
     try {
-      res = await this.rt.fetch(url, { method, headers, body });
+      res = await this.fetch(url, { method, headers, body });
     } catch (e) {
       throw networkError(this.baseUrl, e);
     }

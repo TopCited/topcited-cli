@@ -980,7 +980,7 @@ export interface components {
              * Resume Incomplete
              * @default false
              */
-            resume_incomplete: boolean;
+            resume_incomplete?: boolean;
         };
         /**
          * BrandLimitsResponse
@@ -1076,42 +1076,42 @@ export interface components {
              * Plan Allowance
              * @default 0
              */
-            plan_allowance: number;
+            plan_allowance?: number;
             /**
              * Plan Used
              * @default 0
              */
-            plan_used: number;
+            plan_used?: number;
             /**
              * Plan Remaining
              * @default 0
              */
-            plan_remaining: number;
+            plan_remaining?: number;
             /**
              * Plan Is One Time
              * @default false
              */
-            plan_is_one_time: boolean;
+            plan_is_one_time?: boolean;
             /**
              * Carryover Balance
              * @default 0
              */
-            carryover_balance: number;
+            carryover_balance?: number;
             /**
              * Bonus Balance
              * @default 0
              */
-            bonus_balance: number;
+            bonus_balance?: number;
             /**
              * Purchased Balance
              * @default 0
              */
-            purchased_balance: number;
+            purchased_balance?: number;
             /**
              * Total Available
              * @default 0
              */
-            total_available: number;
+            total_available?: number;
         };
         /**
          * CollectionMethod
@@ -1301,12 +1301,12 @@ export interface components {
              * Iteration
              * @default 0
              */
-            iteration: number;
+            iteration?: number;
             /**
              * Max Iterations
              * @default 10
              */
-            max_iterations: number;
+            max_iterations?: number;
             /** Best Similarity */
             best_similarity?: number | null;
             /** Similarity Score */
@@ -1315,12 +1315,12 @@ export interface components {
              * Converged
              * @default false
              */
-            converged: boolean;
+            converged?: boolean;
             /**
              * Steps
              * @default []
              */
-            steps: components["schemas"]["CoreStepStatus"][];
+            steps?: components["schemas"]["CoreStepStatus"][];
             /** Eta Seconds */
             eta_seconds?: number | null;
             /** Error */
@@ -1442,7 +1442,7 @@ export interface components {
              * V
              * @default 1
              */
-            v: number;
+            v?: number;
             corpus?: components["schemas"]["KeywordCorpusStats"] | null;
             /** Keywords */
             keywords?: {
@@ -1658,7 +1658,7 @@ export interface components {
              * Mode
              * @default competitor
              */
-            mode: string;
+            mode?: string;
             /** Topic */
             topic?: string | null;
             /** Keyword Id */
@@ -1738,7 +1738,7 @@ export interface components {
             /** Text */
             text: string;
             /** @default llm_prompt */
-            query_type: components["schemas"]["QueryType"];
+            query_type?: components["schemas"]["QueryType"];
             /** Category */
             category?: string | null;
             /** Priority */
@@ -1826,33 +1826,33 @@ export interface components {
              * Brands
              * @default []
              */
-            brands: string[];
+            brands?: string[];
             /** Competitor Ids */
             competitor_ids?: string[] | null;
             /**
              * Tracks All Competitors
              * @default false
              */
-            tracks_all_competitors: boolean;
+            tracks_all_competitors?: boolean;
             /** @default auto */
-            run_mode: components["schemas"]["RunMode"];
+            run_mode?: components["schemas"]["RunMode"];
             /**
              * Schedule Cron
              * @default 0 0 * * *
              */
-            schedule_cron: string;
+            schedule_cron?: string;
             /**
              * Schedule Timezone
              * @default UTC
              */
-            schedule_timezone: string;
+            schedule_timezone?: string;
             /** Platforms */
             platforms: components["schemas"]["PlatformProvider"][];
             /**
              * Methods Per Platform
              * @default {}
              */
-            methods_per_platform: {
+            methods_per_platform?: {
                 [key: string]: components["schemas"]["CollectionMethod"];
             };
         };
@@ -1923,7 +1923,7 @@ export interface components {
              * Queries
              * @default []
              */
-            queries: components["schemas"]["QueryResponse"][];
+            queries?: components["schemas"]["QueryResponse"][];
             readonly runnability: components["schemas"]["RunnabilityResponse"];
         };
         /**
@@ -2031,7 +2031,7 @@ export interface components {
          */
         ReportCreate: {
             /** @default geo_audit */
-            report_type: components["schemas"]["ReportType"];
+            report_type?: components["schemas"]["ReportType"];
             /** Params */
             params?: {
                 [key: string]: unknown;
@@ -2300,7 +2300,7 @@ export interface components {
              * Input Type
              * @default text
              */
-            input_type: string;
+            input_type?: string;
             /** Input Content */
             input_content: string;
             output_mode: components["schemas"]["OutputMode"];
@@ -2348,7 +2348,7 @@ export interface components {
              * Deletable
              * @default true
              */
-            deletable: boolean;
+            deletable?: boolean;
             /** Not Deletable Reason */
             not_deletable_reason?: ("task_active" | "job_in_progress") | null;
         };
@@ -2404,7 +2404,7 @@ export interface components {
              * Deletable
              * @default true
              */
-            deletable: boolean;
+            deletable?: boolean;
             /** Not Deletable Reason */
             not_deletable_reason?: ("task_active" | "job_in_progress") | null;
             core_run?: components["schemas"]["CoreRunProgress"] | null;
@@ -2539,14 +2539,14 @@ export interface components {
              * Is Active
              * @default true
              */
-            is_active: boolean;
+            is_active?: boolean;
             /**
              * Id
              * Format: uuid
              */
             id: string;
             /** @default user */
-            role: components["schemas"]["UserRole"];
+            role?: components["schemas"]["UserRole"];
             /** Oauth Provider */
             oauth_provider?: string | null;
             /** Avatar Url */
@@ -2559,12 +2559,12 @@ export interface components {
              * Plan Id
              * @default free_alpha
              */
-            plan_id: string;
+            plan_id?: string;
             /**
              * Market
              * @default global
              */
-            market: string;
+            market?: string;
             /**
              * Available Platforms
              * @description Platforms this account may monitor, derived from market.

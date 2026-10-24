@@ -6,7 +6,7 @@ terminal or from an agent (Claude Code, Codex, Cursor, CI).
 ## Quickstart
 
 ```sh
-curl -fsSL https://topcited.ai/install.sh | sh
+curl -fsSL https://github.com/TopCited/topcited-cli/releases/latest/download/install.sh | sh
 topcited auth login
 topcited brand list
 ```
@@ -15,15 +15,12 @@ topcited brand list
 
 | Path | Command |
 |---|---|
-| Script | `curl -fsSL https://topcited.ai/install.sh \| sh` (Linux, macOS; installs to `~/.local/bin`) |
-| npm | `npm i -g @topcited/cli` or `npx @topcited/cli …` |
+| macOS, Linux | `curl -fsSL https://github.com/TopCited/topcited-cli/releases/latest/download/install.sh \| sh` (installs to `~/.local/bin`) |
+| Windows (PowerShell) | `irm https://github.com/TopCited/topcited-cli/releases/latest/download/install.ps1 \| iex` |
 | Binary | Download from [Releases](https://github.com/TopCited/topcited-cli/releases) and check it against `SHA256SUMS` |
 
-`install.sh` honours `TOPCITED_VERSION` (e.g. `v0.1.0`) and `TOPCITED_INSTALL_DIR`.
-
-> While this repo is private, release downloads need GitHub access, and npm
-> publishing is off (`.github/workflows/npm-publish.yml` is manual). Both open
-> up at the Phase 2 launch.
+The install scripts honour `TOPCITED_VERSION` (e.g. `v0.1.0`) and `TOPCITED_INSTALL_DIR`.
+npm (`@topcited/cli`) isn't published yet.
 
 ## Sign in
 
@@ -46,6 +43,16 @@ warns when fewer than 14 remain.
 ```
 topcited auth login | logout | status | token [--show]
 topcited brand list | use <id|name> | show [brand]
+topcited monitor sets list | create | show
+topcited monitor queries add | rm
+topcited monitor run <set> [--wait] [--dry-run] [--yes]
+topcited monitor results [--set] [--since] [--until]  # summary, gaps, share of voice
+topcited audit run <url> [--wait] | show <id> | list
+topcited recommend [keywords|prompts|content] [--wait] [--list]
+topcited report generate [--wait] | list | show <id> | download <id>
+topcited competitors list | add
+topcited tasks list | show <id> [--wait]
+topcited wait <job>                             # resume any --wait
 topcited usage                                  # plan, T-coins, quotas, monitoring forecast
 topcited api <path> [-X M] [-d json|@file] [-f k=v] [-F k=v] [--paginate]
 topcited doctor                                 # config, auth, connectivity, version skew
@@ -63,7 +70,12 @@ API host.
   envelope `{"code", "message", "hint", "status"}` as the last line; earlier
   lines are warnings (`{"warning", "message"}`) or, for `auth login`, the
   `{"device_authorization": …}` prompt. Parse the last line.
-- Nothing prompts without a TTY.
+- Nothing prompts without a TTY. Commands that spend T-coins ask for
+  confirmation only on a TTY (`--yes` skips it); `--dry-run` prints the
+  estimate and exits 0 without spending.
+- `--wait` polls with backoff until the job ends (`--timeout`, default 1200 s).
+  Async commands print a `job` reference such as `monitor:<set>:<batch>:<runs>`;
+  `topcited wait <job>` resumes waiting.
 - Exit codes: `0` ok, `1` error, `2` usage, `3` auth, `4` payment/quota,
   `5` not found, `6` conflict, `7` `--wait` timed out.
 
@@ -99,5 +111,4 @@ bun run gen:client --fetch   # refresh the snapshot from prod first
 
 ## License
 
-Not chosen yet: MIT or Apache-2.0 is pending a founder decision. Until a
-`LICENSE` file lands, all rights are reserved.
+[MIT](LICENSE).

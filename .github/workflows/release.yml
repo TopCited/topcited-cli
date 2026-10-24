@@ -1,7 +1,7 @@
 name: Release
 
 # Push a tag matching package.json's version (e.g. v0.1.0) to publish a GitHub
-# Release with all five binaries, SHA256SUMS and install.sh.
+# Release with all five binaries, SHA256SUMS, install.sh and install.ps1.
 on:
   push:
     tags: ["v*"]
@@ -62,8 +62,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp install.sh dist/install.sh
+          cp install.sh install.ps1 dist/
           # v1.2.0-rc.1 etc. must not become releases/latest (install.sh, `upgrade`).
           case "$GITHUB_REF_NAME" in *-*) pre=--prerelease ;; *) pre= ;; esac
-          gh release create "$GITHUB_REF_NAME" dist/topcited-* dist/SHA256SUMS dist/install.sh \
+          gh release create "$GITHUB_REF_NAME" dist/topcited-* dist/SHA256SUMS dist/install.sh dist/install.ps1 \
             --verify-tag --generate-notes --title "$GITHUB_REF_NAME" $pre

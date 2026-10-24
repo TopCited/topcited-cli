@@ -78,7 +78,7 @@ Examples:
     .command("token")
     .description("Show the API key in use (masked unless --show)")
     .option("--show", "print the full key")
-    .addHelpText("after", '\nExample:\n  $ curl -H "Authorization: Bearer $(topcited auth token --show)" …')
+    .addHelpText("after", '\nExamples:\n  $ topcited auth token\n  $ curl -H "Authorization: Bearer $(topcited auth token --show)" …')
     .action(action(token));
 }
 
@@ -169,7 +169,9 @@ async function pollForKey(ctx: Context, p: PendingLogin): Promise<DeviceToken & 
   const deadline = Date.parse(p.expires_at);
   let networkFailures = 0;
 
-  while (ctx.rt.now().getTime() < deadline) {
+  // One extra interval past the local deadline: the server keeps approved codes
+  // for a grace period, so an approval in the last seconds still lands.
+  while (ctx.rt.now().getTime() < deadline + interval) {
     await ctx.rt.sleep(interval);
     let res;
     try {
@@ -207,6 +209,7 @@ async function pollForKey(ctx: Context, p: PendingLogin): Promise<DeviceToken & 
         await ctx.rt.store.clearPending(ctx.baseUrl);
         throw new CliError({ exit: Exit.AUTH, code: "access_denied", status: res.status, message: "Sign-in was denied in the browser." });
       case "expired_token":
+      case "invalid_grant": // unknown, already redeemed, or long expired
         await ctx.rt.store.clearPending(ctx.baseUrl);
         throw expired();
       default:
