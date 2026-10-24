@@ -51,6 +51,7 @@ export function registerAuth(program: Command, action: Action): void {
     .option("--no-browser", "don't try to open a browser; just print the URL and code")
     .option("--no-wait", "print the URL and code and exit; finish with `auth login --continue`")
     .option("--continue", "resume waiting for approval of the last code from `--no-wait`")
+    .option("--restart", "discard a sign-in that is still waiting and start a new one")
     .option("--with-token", "read an existing API key from stdin instead of the device flow")
     .addHelpText(
       "after",
@@ -90,6 +91,7 @@ interface LoginOptions {
   browser: boolean;
   wait: boolean;
   continue?: boolean;
+  restart?: boolean;
   withToken?: boolean;
 }
 
@@ -107,20 +109,26 @@ async function login(ctx: Context, opts: LoginOptions): Promise<void> {
     }
     pending = saved;
   } else {
+    // An agent whose shell kills long commands just runs `auth login` again:
+    // resume the code it already showed the user instead of minting a new one.
+    const saved = opts.restart ? undefined : await ctx.rt.store.readPending<PendingLogin>(ctx.baseUrl);
+    if (saved && Date.parse(saved.expires_at) > ctx.rt.now().getTime()) {
+      ctx.info(`Resuming the sign-in started earlier (code ${saved.user_code}). Use --restart for a new code.`);
+      announce(ctx, saved, { ...opts, browser: false });
+      if (!opts.wait) {
+        ctx.print(pendingSummary(saved), "Then run: topcited auth login --continue");
+        return;
+      }
+      const issued = await pollForKey(ctx, saved);
+      await ctx.rt.store.clearPending(ctx.baseUrl);
+      await saveAndReport(ctx, issued);
+      return;
+    }
     pending = await requestDeviceCode(ctx);
     await ctx.rt.store.writePending(ctx.baseUrl, pending);
     announce(ctx, pending, opts);
     if (!opts.wait) {
-      ctx.print(
-        {
-          user_code: pending.user_code,
-          verification_uri: pending.verification_uri,
-          verification_uri_complete: pending.verification_uri_complete ?? null,
-          expires_at: pending.expires_at,
-          next: "topcited auth login --continue",
-        },
-        "Then run: topcited auth login --continue",
-      );
+      ctx.print(pendingSummary(pending), "Then run: topcited auth login --continue");
       return;
     }
   }
@@ -128,6 +136,16 @@ async function login(ctx: Context, opts: LoginOptions): Promise<void> {
   const issued = await pollForKey(ctx, pending);
   await ctx.rt.store.clearPending(ctx.baseUrl);
   await saveAndReport(ctx, issued);
+}
+
+function pendingSummary(p: PendingLogin) {
+  return {
+    user_code: p.user_code,
+    verification_uri: p.verification_uri,
+    verification_uri_complete: p.verification_uri_complete ?? null,
+    expires_at: p.expires_at,
+    next: "topcited auth login --continue",
+  };
 }
 
 async function requestDeviceCode(ctx: Context): Promise<PendingLogin> {
@@ -161,7 +179,7 @@ function announce(ctx: Context, p: PendingLogin, opts: LoginOptions): void {
     ctx.rt.stderr(`To sign in, open ${p.verification_uri}\nand confirm this code matches: ${p.user_code}\n`);
   }
   if (opts.wait && opts.browser && ctx.interactive && ctx.rt.openBrowser(url)) ctx.info("Opened your browser.");
-  if (opts.wait) ctx.info("Waiting for approval… (Ctrl-C to stop; resume with `topcited auth login --continue`)");
+  if (opts.wait) ctx.info("Waiting for approval… If this command is stopped, run `topcited auth login` again to resume.");
 }
 
 async function pollForKey(ctx: Context, p: PendingLogin): Promise<DeviceToken & { api_key: string }> {
@@ -295,7 +313,18 @@ async function logout(ctx: Context): Promise<void> {
 
 async function status(ctx: Context): Promise<void> {
   const cred = await ctx.credential();
-  if (!cred) throw notLoggedIn();
+  if (!cred) {
+    const saved = await ctx.rt.store.readPending<PendingLogin>(ctx.baseUrl);
+    if (saved && Date.parse(saved.expires_at) > ctx.rt.now().getTime()) {
+      throw new CliError({
+        exit: Exit.AUTH,
+        code: "login_pending",
+        message: "Not logged in yet: a sign-in is waiting for approval.",
+        hint: `Approve it at ${saved.verification_uri_complete ?? saved.verification_uri} (code ${saved.user_code}), then run \`topcited auth login\` to finish.`,
+      });
+    }
+    throw notLoggedIn();
+  }
   const client = await ctx.api();
   const user: UserRead = await ctx.call(client.GET("/api/v1/users/me"));
   const key = await findKey(ctx, cred.apiKey);
