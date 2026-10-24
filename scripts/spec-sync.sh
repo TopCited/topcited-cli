@@ -16,7 +16,7 @@ SPEC_URL="${SPEC_URL:-https://api.topcited.ai/api/v1/openapi.public.json}"
 SYNC_BRANCH="${SYNC_BRANCH:-bot/spec-sync}"
 BASE_BRANCH="${BASE_BRANCH:-main}"
 TITLE="chore(api): sync generated client with the prod public spec"
-GENERATED="openapi.public.json src/generated"
+# Generated files the sync owns: openapi.public.json src/generated
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -30,8 +30,8 @@ open_pr() {
 }
 
 # Unchanged, or only formatting/key order changed: nothing to review.
-if git diff --quiet -- $GENERATED || bun run scripts/spec-diff.ts "$work/old.json" openapi.public.json --exit-code; then
-  git checkout -q -- $GENERATED
+if git diff --quiet -- openapi.public.json src/generated || bun run scripts/spec-diff.ts "$work/old.json" openapi.public.json --exit-code; then
+  git checkout -q -- openapi.public.json src/generated
   echo "Spec unchanged: $BASE_BRANCH already matches $SPEC_URL."
   pr="$(open_pr)"
   if [ -n "$pr" ]; then
@@ -47,6 +47,7 @@ checks_ok=1
 if [ -z "${SPEC_SYNC_SKIP_TESTS:-}" ]; then
   if ! { bun run typecheck && bun test; } >&2; then
     checks_ok=0
+    # shellcheck disable=SC2016 # the backticks are Markdown, not command substitution
     printf '\n> ⚠ **`bun run typecheck` / `bun test` fail on the regenerated client.** The CLI uses something that changed; fix it on this branch before merging.\n' >> "$work/body.md"
   fi
 fi
@@ -54,7 +55,7 @@ fi
 if [ -n "${DRY_RUN:-}" ]; then
   echo "DRY RUN: would open/update a PR from $SYNC_BRANCH with this body:"
   cat "$work/body.md"
-  git --no-pager diff --stat -- $GENERATED
+  git --no-pager diff --stat -- openapi.public.json src/generated
   [ "$checks_ok" = 1 ]
   exit
 fi
@@ -62,11 +63,11 @@ fi
 git config user.name "topcited-spec-sync[bot]"
 git config user.email "spec-sync@users.noreply.github.com"
 git checkout -B "$SYNC_BRANCH"
-git add -- $GENERATED
+git add -- openapi.public.json src/generated
 git commit -q -m "$TITLE${IMAGE_TAG:+ ($IMAGE_TAG)}"
 
 # Only push when the generated files differ from what the bot branch already has.
-if git fetch -q origin "$SYNC_BRANCH" 2>/dev/null && git diff --quiet FETCH_HEAD HEAD -- $GENERATED \
+if git fetch -q origin "$SYNC_BRANCH" 2>/dev/null && git diff --quiet FETCH_HEAD HEAD -- openapi.public.json src/generated \
   && [ "$(git merge-base FETCH_HEAD "origin/$BASE_BRANCH")" = "$(git rev-parse "origin/$BASE_BRANCH")" ]; then
   echo "$SYNC_BRANCH already has this spec."
 else
