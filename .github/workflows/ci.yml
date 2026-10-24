@@ -18,12 +18,19 @@ jobs:
       - run: bun test
       - name: Lint shell scripts
         run: shellcheck install.sh scripts/spec-sync.sh
-      - name: Compile and smoke-test linux-x64
+      - name: Compile and smoke-test linux-x64; compile windows-x64
         run: |
-          bun run build --target linux-x64
+          bun run build --target linux-x64 --target windows-x64
           ./dist/topcited-linux-x64 --version
+      # release.yml builds the Windows exe on Linux too; the windows job runs this one.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: dist/topcited-windows-x64.exe
+          retention-days: 1
 
   windows:
+    needs: test
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +40,9 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: install.ps1 against a local server (real Windows PATH handling)
         run: bun test test/install-ps1.test.ts
-      - name: Compile and smoke-test windows-x64
-        run: |
-          bun run build --target windows-x64
-          ./dist/topcited-windows-x64.exe --version
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-exe
+          path: dist
+      - name: Smoke-test the Linux-built windows-x64 exe
+        run: ./dist/topcited-windows-x64.exe --version
