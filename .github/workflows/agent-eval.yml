@@ -1,0 +1,149 @@
+name: Agent eval
+
+# Nightly fresh-agent eval (design § Acceptance test, plan 3.3): headless Claude
+# Code on a runner with no topcited is asked to install the CLI and report the
+# staging test account's top visibility gaps. scripts/eval/check.mjs grades it.
+#
+# Needs secrets ANTHROPIC_API_KEY and TOPCITED_STAGING_API_KEY; without both
+# the run skips cleanly. Optional: SLACK_EVAL_WEBHOOK (failure alerts), vars
+# EVAL_BASE_URL, EVAL_MODEL, EVAL_INSTALL=public (once the repo is public: no
+# install hint, the agent must find topcited.ai's instructions itself).
+on:
+  schedule:
+    - cron: "47 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-eval
+  cancel-in-progress: false
+
+env:
+  MAX_TURNS: "30"
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.gate.outputs.enabled }}
+    steps:
+      - id: gate
+        env:
+          HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          HAS_STAGING_KEY: ${{ secrets.TOPCITED_STAGING_API_KEY != '' }}
+        run: |
+          if [ "$HAS_ANTHROPIC" = true ] && [ "$HAS_STAGING_KEY" = true ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Agent eval skipped: set ANTHROPIC_API_KEY and TOPCITED_STAGING_API_KEY to enable it."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The CLI to install, served locally to the agent. While the repo is private
+  # an anonymous `curl … | sh` can't reach GitHub Releases, so this job fetches
+  # the latest release with the job token (or builds main if there is none).
+  mirror:
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - name: Latest release, else build from source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p mirror
+          if gh release download --repo "$GITHUB_REPOSITORY" --dir mirror \
+               --pattern topcited-linux-x64 --pattern SHA256SUMS --pattern install.sh; then
+            echo "Serving release $(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)"
+          else
+            echo "::notice::No release yet; building from source."
+            bun install --frozen-lockfile
+            bun run build --target linux-x64
+            cp dist/topcited-linux-x64 dist/SHA256SUMS install.sh mirror/
+          fi
+          (cd mirror && sha256sum -c --ignore-missing SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mirror
+          path: mirror/
+          retention-days: 1
+
+  eval:
+    needs: [gate, mirror]
+    if: needs.gate.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TOPCITED_BASE_URL: ${{ vars.EVAL_BASE_URL || 'https://api.staging.topcited.cloud' }}
+      SLACK_EVAL_WEBHOOK: ${{ secrets.SLACK_EVAL_WEBHOOK }}
+    steps:
+      # Only the grader; the agent works in an empty directory elsewhere.
+      - uses: actions/checkout@v4
+        with:
+          path: harness
+          sparse-checkout: scripts/eval
+      - uses: actions/download-artifact@v4
+        with:
+          name: mirror
+          path: mirror
+      - name: Install Claude Code and serve the CLI mirror
+        run: |
+          npm install -g "@anthropic-ai/claude-code@${{ vars.EVAL_CLAUDE_CODE_VERSION || 'latest' }}"
+          if command -v topcited; then echo "::error::topcited is already installed; the eval needs a clean machine"; exit 1; fi
+          nohup python3 -m http.server 8765 --bind 127.0.0.1 --directory mirror > /dev/null 2>&1 &
+          sleep 1
+          curl -fsS -o /dev/null http://127.0.0.1:8765/install.sh
+          mkdir -p "$RUNNER_TEMP/agent"
+      - name: Run the agent
+        working-directory: ${{ runner.temp }}/agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TOPCITED_API_KEY: ${{ secrets.TOPCITED_STAGING_API_KEY }}
+          EVAL_INSTALL: ${{ vars.EVAL_INSTALL }}
+          MODEL: ${{ vars.EVAL_MODEL || 'sonnet' }}
+        run: |
+          prompt="Install the TopCited CLI and tell me my brand's top visibility gaps."
+          if [ "$EVAL_INSTALL" != public ]; then
+            prompt="$prompt (The CLI isn't public yet. Install it with: curl -fsSL http://127.0.0.1:8765/install.sh | TOPCITED_DOWNLOAD_BASE=http://127.0.0.1:8765 sh)"
+          fi
+          set +e
+          timeout 18m claude -p "$prompt" --model "$MODEL" --max-turns "$MAX_TURNS" \
+            --allowedTools Bash --output-format stream-json --verbose > "$RUNNER_TEMP/transcript.jsonl"
+          echo "Agent exited $?"
+      - name: Grade
+        env:
+          TOPCITED_API_KEY: ${{ secrets.TOPCITED_STAGING_API_KEY }}
+          TOPCITED_NO_UPDATE_NOTIFIER: "1"
+        run: |
+          bin="$(command -v topcited || true)"
+          [ -z "$bin" ] && [ -x "$HOME/.local/bin/topcited" ] && bin="$HOME/.local/bin/topcited"
+          code=1
+          if [ -n "$bin" ]; then
+            set +e
+            "$bin" monitor results --json > "$RUNNER_TEMP/truth.json"
+            code=$?
+            set -e
+          fi
+          node harness/scripts/eval/check.mjs --transcript "$RUNNER_TEMP/transcript.jsonl" \
+            --truth "$RUNNER_TEMP/truth.json" --results-exit "$code" --installed "$bin" --max-turns "$MAX_TURNS" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-transcript
+          path: ${{ runner.temp }}/transcript.jsonl
+          retention-days: 14
+      - name: Alert Slack
+        if: failure() && env.SLACK_EVAL_WEBHOOK != ''
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          jq -n --arg t ":x: TopCited CLI fresh-agent eval failed: $RUN_URL" '{text: $t}' \
+            | curl -fsS -X POST -H 'Content-Type: application/json' --data @- "$SLACK_EVAL_WEBHOOK"
