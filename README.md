@@ -6,7 +6,7 @@ terminal or from an agent (Claude Code, Codex, Cursor, CI).
 ## Quickstart
 
 ```sh
-curl -fsSL https://topcited.ai/install.sh | sh
+curl -fsSL https://github.com/TopCited/topcited-cli/releases/latest/download/install.sh | sh
 topcited auth login
 topcited brand list
 ```
@@ -15,15 +15,12 @@ topcited brand list
 
 | Path | Command |
 |---|---|
-| Script | `curl -fsSL https://topcited.ai/install.sh \| sh` (Linux, macOS; installs to `~/.local/bin`) |
-| npm | `npm i -g @topcited/cli` or `npx @topcited/cli …` |
+| macOS, Linux | `curl -fsSL https://github.com/TopCited/topcited-cli/releases/latest/download/install.sh \| sh` (installs to `~/.local/bin`) |
+| Windows (PowerShell) | `irm https://github.com/TopCited/topcited-cli/releases/latest/download/install.ps1 \| iex` |
 | Binary | Download from [Releases](https://github.com/TopCited/topcited-cli/releases) and check it against `SHA256SUMS` |
 
-`install.sh` honours `TOPCITED_VERSION` (e.g. `v0.1.0`) and `TOPCITED_INSTALL_DIR`.
-
-> While this repo is private, release downloads need GitHub access, and npm
-> publishing is off (`.github/workflows/npm-publish.yml` is manual). Both open
-> up at the Phase 2 launch.
+The install scripts honour `TOPCITED_VERSION` (e.g. `v0.1.0`) and `TOPCITED_INSTALL_DIR`.
+npm (`@topcited/cli`) isn't published yet.
 
 ## Sign in
 
@@ -114,5 +111,4 @@ bun run gen:client --fetch   # refresh the snapshot from prod first
 
 ## License
 
-Not chosen yet: MIT or Apache-2.0 is pending a founder decision. Until a
-`LICENSE` file lands, all rights are reserved.
+[MIT](LICENSE).

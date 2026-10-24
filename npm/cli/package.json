@@ -1,6 +1,7 @@
 {
   "name": "@topcited/cli",
   "version": "0.0.0",
+  "license": "MIT",
   "description": "TopCited CLI: AI visibility (GEO) from your terminal and your agents",
   "homepage": "https://topcited.ai",
   "repository": { "type": "git", "url": "git+https://github.com/TopCited/topcited-cli.git" },
