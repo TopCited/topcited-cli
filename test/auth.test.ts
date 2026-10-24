@@ -27,6 +27,39 @@ function deviceApi(tokenResponses: Array<() => Response>) {
 const pending = () => json({ error: "authorization_pending" }, 400);
 const issued = () => json({ api_key: KEY, expires_at: "2027-01-21T00:00:00Z", name: "topcited-cli on box", user: { email: ME.email } });
 
+describe("auth login resumes an interrupted sign-in (agents)", () => {
+  test("re-running `auth login` reuses the saved code instead of minting a new one", async () => {
+    api = deviceApi([issued]);
+    const rt = testRuntime();
+    expect(await cli(rt, "--base-url", api.url, "auth", "login", "--no-wait")).toBe(0);
+    // The agent's shell killed the first command; it simply runs it again.
+    expect(await cli(rt, "--base-url", api.url, "auth", "login")).toBe(0);
+    expect(api.calls("POST", "/api/v1/auth/device/code")).toHaveLength(1);
+    // Agents (no TTY) see the resumed code in the device_authorization line on stderr.
+    expect(rt.err().split("BCDF-GHJK").length - 1).toBeGreaterThanOrEqual(2);
+    expect(await rt.store.getCredential(api.url)).toMatchObject({ api_key: KEY });
+  });
+
+  test("--restart discards the waiting sign-in and requests a new code", async () => {
+    api = deviceApi([issued]);
+    const rt = testRuntime();
+    expect(await cli(rt, "--base-url", api.url, "auth", "login", "--no-wait")).toBe(0);
+    expect(await cli(rt, "--base-url", api.url, "auth", "login", "--restart")).toBe(0);
+    expect(api.calls("POST", "/api/v1/auth/device/code")).toHaveLength(2);
+  });
+
+  test("auth status points at the waiting sign-in", async () => {
+    api = deviceApi([pending]);
+    const rt = testRuntime();
+    expect(await cli(rt, "--base-url", api.url, "auth", "login", "--no-wait")).toBe(0);
+    expect(await cli(rt, "--base-url", api.url, "auth", "status")).toBe(3);
+    const err = rt.errJson().at(-1);
+    expect(err.code).toBe("login_pending");
+    expect(err.hint).toContain("https://topcited.ai/device?code=BCDF-GHJK");
+    expect(err.hint).toContain("topcited auth login");
+  });
+});
+
 describe("auth login (device flow)", () => {
   test("polls through pending/slow_down, stores the key 0600, prints JSON", async () => {
     api = deviceApi([pending, () => json({ error: "slow_down" }, 400), pending, issued]);

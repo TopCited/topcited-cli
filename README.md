@@ -28,6 +28,8 @@ npm (`@topcited/cli`) isn't published yet.
 and waits while you approve. Approval issues an ordinary API key named
 `topcited-cli on <hostname>`; logging in again on the same machine replaces it.
 
+- Interrupted (an agent's shell timed out)? Run `topcited auth login` again: it
+  resumes the code you already approved. `--restart` starts over.
 - No live terminal (some agents): `topcited auth login --no-wait` prints the
   code and exits; run `topcited auth login --continue` after approving.
 - CI: `echo "$KEY" | topcited auth login --with-token`, or just set `TOPCITED_API_KEY`.
