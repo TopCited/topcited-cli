@@ -101,6 +101,24 @@ bun run gen:client           # regenerate from the committed snapshot
 bun run gen:client --fetch   # refresh the snapshot from prod first
 ```
 
+### Spec sync
+
+`.github/workflows/spec-sync.yml` keeps `openapi.public.json` and the generated
+client in step with prod. It runs on the `prod-promoted` dispatch from saas
+`deploy-prod.yml`, nightly, and on demand (dry-run by default). When the spec
+changes, it opens or updates one PR from `bot/spec-sync`; when nothing changed,
+it does nothing and closes a stale sync PR. Locally:
+
+```sh
+DRY_RUN=1 sh scripts/spec-sync.sh                      # against prod
+DRY_RUN=1 SPEC_URL=./other.json sh scripts/spec-sync.sh
+bun run scripts/spec-diff.ts old.json new.json          # the PR body's summary
+```
+
+Set a `SPEC_SYNC_TOKEN` secret (fine-grained; contents + pull requests on this
+repo): PRs opened with `GITHUB_TOKEN` don't run CI, and this repo doesn't allow
+Actions to create PRs.
+
 ### Releasing
 
 1. Bump `version` in `package.json` and merge.
