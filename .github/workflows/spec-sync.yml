@@ -1,0 +1,57 @@
+name: Spec sync
+
+# Keep the committed public spec + generated client in step with prod.
+# Triggers: saas deploy-prod.yml sends `prod-promoted` after each successful
+# prod deploy (payload {image_tag, previous_tag}); a nightly run catches a
+# dropped dispatch; manual runs can dry-run or point at another spec.
+on:
+  repository_dispatch:
+    types: [prod-promoted]
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      spec_url:
+        description: Spec to sync to
+        default: https://api.topcited.ai/api/v1/openapi.public.json
+      dry_run:
+        description: Print the summary only; push nothing, open no PR
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# One sync at a time; a dispatch and the nightly run never race on the branch.
+concurrency:
+  group: spec-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          # PRs opened with GITHUB_TOKEN don't trigger CI and need the repo's
+          # "Allow GitHub Actions to create pull requests" setting; a
+          # SPEC_SYNC_TOKEN (fine-grained: contents + pull requests on this
+          # repo) avoids both.
+          token: ${{ secrets.SPEC_SYNC_TOKEN || github.token }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - run: bun install --frozen-lockfile
+      - name: Sync
+        env:
+          GH_TOKEN: ${{ secrets.SPEC_SYNC_TOKEN || github.token }}
+          SPEC_URL: ${{ inputs.spec_url || 'https://api.topcited.ai/api/v1/openapi.public.json' }}
+          IMAGE_TAG: ${{ github.event.client_payload.image_tag }}
+          PREVIOUS_TAG: ${{ github.event.client_payload.previous_tag }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        # Explicit bash gets -o pipefail, so a failed sync isn't masked by tee.
+        shell: bash
+        run: sh scripts/spec-sync.sh | tee -a "$GITHUB_STEP_SUMMARY"
