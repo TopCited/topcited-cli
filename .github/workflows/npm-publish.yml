@@ -1,0 +1,52 @@
+name: Publish to npm
+
+# Manual only: publishes @topcited/cli and its five @topcited/cli-<os>-<cpu>
+# platform packages from an existing GitHub Release's binaries.
+# Needs the NPM_TOKEN secret (automation token with publish rights on @topcited).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish (e.g. v0.1.0)
+        required: true
+      dry_run:
+        description: Run `npm publish --dry-run` only
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write # npm provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Download release binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download "${{ inputs.tag }}" --dir dist --pattern 'topcited-*' --pattern SHA256SUMS
+          (cd dist && sha256sum -c SHA256SUMS)
+      - run: bun run scripts/npm-pack.ts --version "${{ inputs.tag }}"
+      - name: Publish (platform packages first, launcher last)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # npm provenance is only supported for public source repos.
+          PROVENANCE: ${{ github.event.repository.private == false && '--provenance' || '' }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: |
+          for dir in dist/npm/cli-*/ dist/npm/cli/; do
+            (cd "$dir" && npm publish --access public $PROVENANCE $DRY_RUN)
+          done
