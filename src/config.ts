@@ -39,6 +39,7 @@ export interface Config {
 
 export interface State {
   update_checked_at?: string;
+  update_notified_at?: string;
   latest_version?: string;
 }
 
