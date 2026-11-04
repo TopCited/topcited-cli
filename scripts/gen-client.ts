@@ -1,7 +1,7 @@
 // Regenerate the typed client from the public OpenAPI contract.
 //
 //   bun run gen:client                  # from the committed openapi.public.json
-//   bun run gen:client --fetch [url]    # refresh the snapshot first (default: prod)
+//   bun run gen:client --fetch [url]    # refresh the snapshot first (default: prod; a file path works too)
 import openapiTS, { astToString } from "openapi-typescript";
 
 const PROD_SPEC_URL = "https://api.topcited.ai/api/v1/openapi.public.json";
@@ -13,9 +13,15 @@ const args = process.argv.slice(2);
 const fetchIdx = args.indexOf("--fetch");
 if (fetchIdx !== -1) {
   const url = args[fetchIdx + 1] ?? PROD_SPEC_URL;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`);
-  const spec = await res.json();
+  let spec: unknown;
+  if (/^https?:\/\//.test(url)) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`);
+    spec = await res.json();
+  } else {
+    spec = await Bun.file(url).json();
+  }
+  if (!spec || typeof spec !== "object" || !("paths" in spec)) throw new Error(`${url} is not an OpenAPI document`);
   await Bun.write(SNAPSHOT, JSON.stringify(spec, null, 2) + "\n");
   console.error(`snapshot refreshed from ${url}`);
 }

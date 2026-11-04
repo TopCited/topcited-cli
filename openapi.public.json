@@ -4330,12 +4330,12 @@
         "properties": {
           "per_million_words": {
             "type": "number",
-            "exclusiveMinimum": 0.0,
+            "exclusiveMinimum": 0,
             "title": "Per Million Words"
           },
           "lift": {
             "type": "number",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Lift"
           }
         },
@@ -4391,12 +4391,12 @@
         "properties": {
           "token_count": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Token Count"
           },
           "page_count": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Page Count"
           }
         },
@@ -4411,7 +4411,7 @@
         "properties": {
           "rank": {
             "type": "integer",
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Rank"
           },
           "scores": {
@@ -4795,32 +4795,32 @@
         "properties": {
           "website": {
             "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "maximum": 1,
+            "minimum": 0,
             "title": "Website"
           },
           "serp": {
             "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "maximum": 1,
+            "minimum": 0,
             "title": "Serp"
           },
           "llm": {
             "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "maximum": 1,
+            "minimum": 0,
             "title": "Llm"
           },
           "composite": {
             "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "maximum": 1,
+            "minimum": 0,
             "title": "Composite"
           },
           "diversity_bonus": {
             "type": "number",
             "maximum": 0.05,
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Diversity Bonus"
           }
         },
@@ -7739,12 +7739,12 @@
         "properties": {
           "occurrences": {
             "type": "integer",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Occurrences"
           },
           "per_10k_tokens": {
             "type": "number",
-            "minimum": 0.0,
+            "minimum": 0,
             "title": "Per 10K Tokens"
           }
         },

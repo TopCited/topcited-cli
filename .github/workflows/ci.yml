@@ -16,8 +16,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun test
-      - name: Lint install.sh
-        run: shellcheck install.sh
+      - name: Lint shell scripts
+        run: shellcheck install.sh scripts/spec-sync.sh
       - name: Compile and smoke-test linux-x64
         run: |
           bun run build --target linux-x64
