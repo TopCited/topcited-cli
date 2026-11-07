@@ -9,7 +9,7 @@ export function registerApi(program: Command, action: Action): void {
   program
     .command("api")
     .description("Make an authenticated request to the TopCited API (like `gh api`)")
-    .argument("<path>", "API path, e.g. /monitoring/query-sets (the /api/v1 prefix is optional)")
+    .argument("<path>", "API path, e.g. monitoring/query-sets (leading slash and /api/v1 prefix optional)")
     .option("-X, --method <method>", "HTTP method (default: GET, or POST with --data)")
     .option("-d, --data <json>", "request body: JSON text, @file, or @- for stdin")
     .option("-f, --field <key=value>", "string field (query param for GET, JSON body otherwise); repeatable", collect, [])
@@ -22,10 +22,13 @@ export function registerApi(program: Command, action: Action): void {
       "after",
       `
 Examples:
-  $ topcited api /users/me
-  $ topcited api /monitoring/runs -f limit=100 --paginate
-  $ topcited api -X PATCH /monitoring/query-sets/<id> -d '{"paused": true}'
-  $ topcited api -X POST /brands/<id>/competitors -f name=Acme -f website=acme.com
+  $ topcited api users/me
+  $ topcited api monitoring/runs -f limit=100 --paginate
+  $ topcited api -X PATCH monitoring/query-sets/<id> -d '{"paused": true}'
+  $ topcited api -X POST brands/<id>/competitors -f name=Acme -f website=acme.com
+
+Paths are written without a leading slash so they survive Git Bash on Windows,
+which rewrites an argument starting with "/" into a Windows file path.
 
 Spec: <base-url>/api/v1/openapi.public.json`,
     )
@@ -47,7 +50,19 @@ interface ApiOptions {
   maxPages?: string;
 }
 
+// Git Bash (MSYS), the shell Claude Code uses on Windows, rewrites an argument
+// starting with "/" before we see it: `/monitoring/runs` arrives as
+// `C:/Program Files/Git/monitoring/runs`. No API path starts with a drive letter.
+const WINDOWS_PATH = /^[A-Za-z]:[\\/]/;
+
 export function apiPath(path: string): string {
+  if (WINDOWS_PATH.test(path)) {
+    throw usageError(
+      `"${path}" is a Windows file path, not an API path.`,
+      'Git Bash rewrites arguments that start with "/" into Windows paths. Drop the leading slash ' +
+        "(`topcited api monitoring/runs`), or set MSYS_NO_PATHCONV=1.",
+    );
+  }
   const p = path.startsWith("/") ? path : `/${path}`;
   return p.startsWith("/api/") ? p : `/api/v1${p}`;
 }

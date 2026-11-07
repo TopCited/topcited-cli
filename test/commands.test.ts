@@ -45,6 +45,15 @@ describe("topcited api", () => {
     expect(rt.errJson().at(-1)).toMatchObject({ code: "not_found", status: 404 });
   });
 
+  test("a path Git Bash rewrote into a Windows path is a usage error, not a 404", async () => {
+    api = mockApi({});
+    for (const mangled of ["C:/Program Files/Git/monitoring/runs", "D:\\msys64\\api\\v1\\users\\me"]) {
+      const rt = authed();
+      expect(await cli(rt, "--base-url", api.url, "api", mangled)).toBe(2);
+      expect(rt.errJson().at(-1)).toMatchObject({ code: "usage", hint: expect.stringContaining("Drop the leading slash") });
+    }
+  });
+
   test("--paginate walks skip/limit over {items,total} pages", async () => {
     const all = Array.from({ length: 5 }, (_, i) => ({ i }));
     api = mockApi({
