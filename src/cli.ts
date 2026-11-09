@@ -42,7 +42,7 @@ Common flows:
   $ topcited monitor results               visibility, gaps and share of voice
   $ topcited recommend prompts --wait      prompts worth tracking
   $ topcited usage                         plan and T-coin balance
-  $ topcited api /monitoring/query-sets    any public endpoint, raw
+  $ topcited api monitoring/query-sets     any public endpoint, raw
   $ topcited doctor                        diagnose config, auth, connectivity
 
 Agents: output is JSON when stdout is not a terminal (or with --json); errors
