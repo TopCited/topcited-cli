@@ -4,9 +4,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// install.ps1 against a local server. Runs wherever pwsh exists: CI's
-// ubuntu-latest (preinstalled) and the windows job; skipped elsewhere.
-const pwsh = Bun.which("pwsh");
+// install.ps1 against a local server, in every PowerShell on the machine: pwsh
+// (CI's ubuntu-latest and windows jobs) and, on Windows, Windows PowerShell 5.1.
+// In the windows job 5.1 starts with PowerShell 7's PSModulePath inherited from
+// the step's shell, which is how an agent running in PowerShell 7 would start it.
+const shells = ["pwsh", "powershell"].flatMap((name) => {
+  const path = Bun.which(name);
+  return path ? [{ name, path }] : [];
+});
 const asset = "topcited-windows-x64.exe";
 const fakeBinary = "MZ fake windows binary\n";
 
@@ -31,9 +36,9 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-async function install(installDir: string) {
+async function install(shell: string, installDir: string) {
   // Async spawn: a sync spawn would block the event loop serving the download.
-  const proc = Bun.spawn([pwsh!, "-NoProfile", "-NonInteractive", "-Command", "Get-Content -Raw ./install.ps1 | Invoke-Expression"], {
+  const proc = Bun.spawn([shell, "-NoProfile", "-NonInteractive", "-Command", "Get-Content -Raw ./install.ps1 | Invoke-Expression"], {
     env: {
       ...process.env,
       TOPCITED_DOWNLOAD_BASE: `http://127.0.0.1:${server.port}`,
@@ -46,12 +51,12 @@ async function install(installDir: string) {
   return { exitCode: await proc.exited, output: out + err };
 }
 
-describe.skipIf(!pwsh)("install.ps1", () => {
+describe.skipIf(shells.length === 0).each(shells)("install.ps1 in $name", ({ name, path: shell }) => {
   test("installs topcited.exe when the checksum matches", async () => {
     const digest = createHash("sha256").update(fakeBinary).digest("hex").toUpperCase(); // case-insensitive
     sums = `${"0".repeat(64)}  topcited-linux-x64\n${digest}  ${asset}\n`;
-    const target = join(dir, "ok");
-    const res = await install(target);
+    const target = join(dir, name, "ok");
+    const res = await install(shell, target);
     expect(res.output).toContain("Installed topcited");
     expect(res.exitCode).toBe(0);
     expect(await Bun.file(join(target, "topcited.exe")).text()).toBe(fakeBinary);
@@ -59,8 +64,8 @@ describe.skipIf(!pwsh)("install.ps1", () => {
 
   test("refuses to install on checksum mismatch", async () => {
     sums = `${"a".repeat(64)}  ${asset}\n`;
-    const target = join(dir, "bad");
-    const res = await install(target);
+    const target = join(dir, name, "bad");
+    const res = await install(shell, target);
     expect(res.exitCode).not.toBe(0);
     expect(res.output).toContain("checksum mismatch");
     expect(await Bun.file(join(target, "topcited.exe")).exists()).toBe(false);
@@ -68,7 +73,7 @@ describe.skipIf(!pwsh)("install.ps1", () => {
 
   test("fails when the asset has no checksum line", async () => {
     sums = `${"a".repeat(64)}  topcited-linux-x64\n`;
-    const res = await install(join(dir, "missing"));
+    const res = await install(shell, join(dir, name, "missing"));
     expect(res.exitCode).not.toBe(0);
     expect(res.output).toContain("no checksum");
   }, 60_000);
@@ -76,9 +81,9 @@ describe.skipIf(!pwsh)("install.ps1", () => {
   test("replaces an existing install", async () => {
     const digest = createHash("sha256").update(fakeBinary).digest("hex");
     sums = `${digest}  ${asset}\n`;
-    const target = join(dir, "again");
+    const target = join(dir, name, "again");
     await Bun.write(join(target, "topcited.exe"), "old");
-    const res = await install(target);
+    const res = await install(shell, target);
     expect(res.exitCode).toBe(0);
     expect(await Bun.file(join(target, "topcited.exe")).text()).toBe(fakeBinary);
   }, 60_000);
