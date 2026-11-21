@@ -8,9 +8,19 @@ import { join } from "node:path";
 // (CI's ubuntu-latest and windows jobs) and, on Windows, Windows PowerShell 5.1.
 // In the windows job 5.1 starts with PowerShell 7's PSModulePath inherited from
 // the step's shell, which is how an agent running in PowerShell 7 would start it.
-const shells = ["pwsh", "powershell"].flatMap((name) => {
-  const path = Bun.which(name);
-  return path ? [{ name, path }] : [];
+// On Windows, install.ps1 adds the install folder to the real user PATH, so it
+// only runs there in CI.
+const windows = process.platform === "win32";
+const shells =
+  windows && !process.env.CI
+    ? []
+    : ["pwsh", "powershell"].flatMap((name) => {
+        const path = Bun.which(name);
+        return path ? [{ name, path }] : [];
+      });
+
+test.if(windows && !!process.env.CI)("finds both PowerShells on Windows", () => {
+  expect(shells.map((s) => s.name)).toEqual(["pwsh", "powershell"]);
 });
 const asset = "topcited-windows-x64.exe";
 const fakeBinary = "MZ fake windows binary\n";
