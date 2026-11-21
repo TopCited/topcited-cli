@@ -56,7 +56,13 @@ function Install-Topcited {
             if ($parts.Count -eq 2 -and $parts[1] -eq $asset) { $expected = $parts[0].ToLowerInvariant() }
         }
         if (-not $expected) { throw "topcited: no checksum for $asset in SHA256SUMS" }
-        $actual = (Get-FileHash -Algorithm SHA256 -Path $exe).Hash.ToLowerInvariant()
+        # .NET rather than Get-FileHash: Windows PowerShell started by a process that
+        # inherited PowerShell 7's environment (say, an agent launched from a PowerShell 7
+        # terminal) gets a module path that hides Get-FileHash.
+        $sha = [Security.Cryptography.SHA256]::Create()
+        $stream = [IO.File]::OpenRead($exe)
+        try { $actual = -join ($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) }
+        finally { $stream.Dispose(); $sha.Dispose() }
         if ($actual -ne $expected) { throw "topcited: checksum mismatch for $asset (expected $expected, got $actual)" }
 
         New-Item -ItemType Directory -Path $installDir -Force | Out-Null
