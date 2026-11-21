@@ -35,7 +35,4 @@ jobs:
         with:
           bun-version: 1.3.11
       - run: bun install --frozen-lockfile
-      # pwsh on purpose: Windows PowerShell 5.1 then inherits PowerShell 7's
-      # module path, the case install.ps1 must survive.
       - run: bun test test/install-ps1.test.ts
-        shell: pwsh
